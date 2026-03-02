@@ -20,7 +20,61 @@ This directory contains Kubernetes manifests for deploying Siclaw in a multi-ten
 └─────────┘ └─────────┘
 ```
 
-## Quick Start
+## Deployment Options
+
+Siclaw supports two deployment methods:
+
+- **Raw manifests** (this directory) — simple `kubectl apply`, suitable for quick setups
+- **Helm chart** (`helm/siclaw/`) — parameterized deployment with overridable values
+
+## Option A: Helm Chart (Recommended)
+
+### Minimal Install
+
+```bash
+helm install siclaw helm/siclaw -n siclaw --create-namespace \
+  --set image.registry=your-registry.example.com/siclaw \
+  --set database.url="mysql://user:pass@host:3306/siclaw"
+```
+
+### With Existing Secret
+
+```bash
+helm install siclaw helm/siclaw -n siclaw --create-namespace \
+  --set image.registry=your-registry.example.com/siclaw \
+  --set database.existingSecret.name=my-db-secret
+```
+
+### Custom Values File
+
+```bash
+helm install siclaw helm/siclaw -n siclaw --create-namespace -f my-values.yaml
+```
+
+### Key Values
+
+| Value | Default | Description |
+|-------|---------|-------------|
+| `image.registry` | `""` | Image registry prefix |
+| `image.tag` | `latest` | Image tag |
+| `gateway.replicas` | `1` | Gateway replicas |
+| `gateway.service.type` | `NodePort` | Service type |
+| `gateway.service.nodePort` | `31000` | NodePort port |
+| `cron.replicas` | `2` | Cron service replicas |
+| `database.url` | `""` | MySQL connection URL |
+| `database.existingSecret.name` | `""` | Use existing K8s secret for DB URL |
+| `persistence.skills.size` | `10Gi` | Skills volume size |
+
+See `helm/siclaw/values.yaml` for the full list.
+
+### Verify
+
+```bash
+helm lint helm/siclaw
+helm template siclaw helm/siclaw
+```
+
+## Option B: Raw Manifests
 
 ### 1. Build Everything
 
