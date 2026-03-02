@@ -4,6 +4,8 @@
  * Independent from Gateway. Multi-instance capable via CronCoordinator.
  * Each instance registers itself, sends heartbeats, and claims jobs.
  * Dead instances are detected and their jobs reassigned.
+ *
+ * All DB access goes through Gateway's internal API (no direct DB connection).
  */
 
 import os from "node:os";
@@ -11,8 +13,7 @@ import { CronScheduler } from "./cron/cron-scheduler.js";
 import { CronExecutor } from "./cron/cron-executor.js";
 import { CronCoordinator } from "./cron/cron-coordinator.js";
 import { createCronApi } from "./cron/cron-api.js";
-import { createDb, closeDb } from "./gateway/db/index.js";
-import { ConfigRepository } from "./gateway/db/repositories/config-repo.js";
+import { GatewayClient } from "./cron/gateway-client.js";
 
 const apiPort = parseInt(process.env.SICLAW_CRON_API_PORT || "3100", 10);
 
@@ -30,18 +31,17 @@ const endpoint =
 console.log(`[cron] Instance ID: ${instanceId}`);
 console.log(`[cron] Endpoint: ${endpoint}`);
 
-// 1. Connect to DB
-const db = await createDb();
-const configRepo = new ConfigRepository(db);
-
-// 2. Create executor (delegates to gateway's internal API)
+// 1. Create gateway client (all DB access goes through gateway)
 const gatewayUrl = process.env.SICLAW_GATEWAY_URL || "http://siclaw-gateway";
 console.log(`[cron] Gateway URL: ${gatewayUrl}`);
-const executor = new CronExecutor(gatewayUrl, configRepo);
+const client = new GatewayClient(gatewayUrl);
+
+// 2. Create executor (delegates to gateway's internal API)
+const executor = new CronExecutor(gatewayUrl, client);
 const scheduler = new CronScheduler((job) => executor.execute(job));
 
 // 3. Create coordinator for multi-instance coordination
-const coordinator = new CronCoordinator(instanceId, endpoint, configRepo, scheduler);
+const coordinator = new CronCoordinator(instanceId, endpoint, client, scheduler);
 
 // 4. Start inner API
 const apiServer = createCronApi(scheduler, instanceId);
@@ -58,7 +58,6 @@ const PURGE_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const RETENTION_DAYS = 30;
 
 async function purgeOldNotifications() {
-  const gatewayUrl = process.env.SICLAW_GATEWAY_URL || "http://siclaw-gateway";
   try {
     const resp = await fetch(`${gatewayUrl}/api/internal/notifications/purge`, {
       method: "POST",
@@ -84,7 +83,6 @@ async function shutdown() {
   scheduler.stop();
   await coordinator.shutdown();
   apiServer.close();
-  await closeDb();
   process.exit(0);
 }
 

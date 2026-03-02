@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Save, Loader2, ShieldCheck, HardDrive, Globe } from 'lucide-react';
+import { Save, Loader2, ShieldCheck, HardDrive, Globe, KeyRound } from 'lucide-react';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { usePermissions } from '@/hooks/usePermissions';
 
@@ -8,6 +8,8 @@ interface FieldConfig {
     label: string;
     type: 'text' | 'password' | 'toggle';
     placeholder?: string;
+    /** If true, never display existing value — write-only field */
+    writeOnly?: boolean;
 }
 
 interface SectionConfig {
@@ -18,6 +20,14 @@ interface SectionConfig {
 }
 
 const SECTIONS: SectionConfig[] = [
+    {
+        key: 'jwt',
+        title: 'JWT Secret',
+        icon: KeyRound,
+        fields: [
+            { key: 'secret', label: 'Secret', type: 'password', placeholder: 'Enter new JWT secret (leave empty to keep current)', writeOnly: true },
+        ],
+    },
     {
         key: 'sso',
         title: 'SSO Configuration',
@@ -48,6 +58,7 @@ const SECTIONS: SectionConfig[] = [
         fields: [
             { key: 'baseUrl', label: 'Base URL', type: 'text', placeholder: 'https://your-domain.com' },
             { key: 'platformUrl', label: 'Platform URL', type: 'text', placeholder: 'https://your-platform-url' },
+            { key: 'agentboxImage', label: 'AgentBox Image', type: 'text', placeholder: 'siclaw-agentbox:latest' },
         ],
     },
 ];
@@ -62,12 +73,31 @@ export function SystemSettings() {
     const [error, setError] = useState<string | null>(null);
     const hasLoadedRef = useRef(false);
 
+    // Collect all writeOnly keys so we can strip them from loaded config
+    const writeOnlyKeys = new Set(
+        SECTIONS.flatMap(s => s.fields.filter(f => f.writeOnly).map(f => `${s.key}.${f.key}`))
+    );
+    // Track which writeOnly keys have a value in the DB (for "configured" indicator)
+    const [configuredKeys, setConfiguredKeys] = useState<Set<string>>(new Set());
+
     const loadConfig = useCallback(async () => {
         try {
             const result = await sendRpc<{ config: Record<string, string> }>('system.getConfig');
             const config = result.config ?? {};
-            setValues(config);
-            setSaved(config);
+            // Detect which writeOnly fields have values (even masked)
+            const configured = new Set<string>();
+            const display: Record<string, string> = {};
+            for (const [k, v] of Object.entries(config)) {
+                if (writeOnlyKeys.has(k)) {
+                    if (v) configured.add(k);
+                    // Don't populate the input — keep it empty
+                } else {
+                    display[k] = v;
+                }
+            }
+            setConfiguredKeys(configured);
+            setValues(display);
+            setSaved(display);
         } catch (err) {
             console.warn('[SystemSettings] Failed to load config:', err);
         }
@@ -89,6 +119,8 @@ export function SystemSettings() {
         if (!sec) return false;
         return sec.fields.some(f => {
             const key = `${section}.${f.key}`;
+            // writeOnly fields: dirty when user typed something
+            if (f.writeOnly) return !!(values[key]);
             return (values[key] ?? '') !== (saved[key] ?? '');
         });
     };
@@ -214,11 +246,19 @@ export function SystemSettings() {
                                     ? values[`${section.key}.${toggleField.key}`] !== 'true'
                                     : false;
 
+                                const isWriteOnly = field.writeOnly;
+                                const isConfigured = isWriteOnly && configuredKeys.has(fullKey);
+
                                 return (
                                     <div key={fullKey} className={sectionDisabled ? 'opacity-50' : ''}>
-                                        <label className="block text-xs font-medium text-gray-600 mb-1">
-                                            {field.label}
-                                        </label>
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <label className="block text-xs font-medium text-gray-600">
+                                                {field.label}
+                                            </label>
+                                            {isConfigured && !(values[fullKey]) && (
+                                                <span className="text-xs text-green-600 font-medium">Configured</span>
+                                            )}
+                                        </div>
                                         <input
                                             type={field.type}
                                             value={values[fullKey] ?? ''}

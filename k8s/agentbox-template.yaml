@@ -37,12 +37,7 @@ spec:
       value: "production"
     - name: SICLAW_AGENTBOX_PORT
       value: "3000"
-    # LLM API key for custom provider
-    - name: SICLAW_LLM_API_KEY
-      valueFrom:
-        secretKeyRef:
-          name: siclaw-secrets
-          key: llm-api-key
+    # LLM/S3 config is injected dynamically by gateway via envResolver
 
     # Resource limits
     resources:

@@ -5,23 +5,23 @@
  * which is the single owner of all AgentBox lifecycles.
  */
 
-import type { ConfigRepository } from "../gateway/db/repositories/config-repo.js";
+import type { GatewayClient } from "./gateway-client.js";
 import type { CronJobRow } from "./cron-scheduler.js";
 
 const EXECUTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
 export class CronExecutor {
   private gatewayUrl: string;
-  private configRepo: ConfigRepository;
+  private client: GatewayClient;
 
-  constructor(gatewayUrl: string, configRepo: ConfigRepository) {
+  constructor(gatewayUrl: string, client: GatewayClient) {
     this.gatewayUrl = gatewayUrl.replace(/\/$/, "");
-    this.configRepo = configRepo;
+    this.client = client;
   }
 
   async execute(job: CronJobRow): Promise<void> {
     // Re-validate job from DB before executing (handles cross-instance delete/pause)
-    const current = await this.configRepo.getCronJobById(job.id);
+    const current = await this.client.getCronJobById(job.id);
     if (!current || current.status !== "active") {
       console.log(`[cron-executor] Job ${job.id} no longer active, skipping`);
       return;
@@ -60,7 +60,7 @@ export class CronExecutor {
       const resultText = data.resultText || "";
 
       // Record success
-      await this.configRepo.updateCronJobRun(job.id, "success");
+      await this.client.updateCronJobRun(job.id, "success");
       console.log(`[cron-executor] Job ${job.id} completed in ${data.durationMs}ms, resultText length=${resultText.length}`);
       if (resultText) {
         console.log(`[cron-executor] Result preview: ${resultText.slice(0, 200)}`);
@@ -70,7 +70,7 @@ export class CronExecutor {
       this.notifyGateway(job, "success", resultText);
     } catch (err) {
       console.error(`[cron-executor] Job ${job.id} failed:`, err);
-      await this.configRepo.updateCronJobRun(job.id, "failure");
+      await this.client.updateCronJobRun(job.id, "failure");
       this.notifyGateway(job, "failure", "", err instanceof Error ? err.message : String(err));
     }
   }

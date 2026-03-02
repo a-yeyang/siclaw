@@ -61,6 +61,13 @@ export class AgentBoxManager {
     this.envResolver = resolver;
   }
 
+  /** Update the spawner's AgentBox image at runtime (takes effect on next spawn) */
+  setSpawnerImage(image: string): void {
+    if ('setImage' in this.spawner) {
+      (this.spawner as any).setImage(image);
+    }
+  }
+
   /**
    * Start health check
    */

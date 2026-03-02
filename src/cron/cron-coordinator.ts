@@ -7,7 +7,7 @@
  * - Graceful shutdown (release jobs immediately)
  */
 
-import type { ConfigRepository } from "../gateway/db/repositories/config-repo.js";
+import type { GatewayClient } from "./gateway-client.js";
 import type { CronScheduler } from "./cron-scheduler.js";
 
 const HEARTBEAT_INTERVAL_MS = 30_000; // 30s
@@ -21,7 +21,7 @@ export class CronCoordinator {
   constructor(
     private instanceId: string,
     private endpoint: string,
-    private configRepo: ConfigRepository,
+    private configRepo: GatewayClient,
     private scheduler: CronScheduler,
   ) {}
 

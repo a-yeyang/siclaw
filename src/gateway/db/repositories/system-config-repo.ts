@@ -12,6 +12,7 @@ import { isUniqueViolation } from "../dialect-helpers.js";
 
 /** Sensitive keys whose values are masked in getAll() output */
 const SENSITIVE_KEYS = new Set([
+  "jwt.secret",
   "sso.clientSecret",
   "s3.accessKey",
   "s3.secretKey",

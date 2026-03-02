@@ -14,7 +14,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteMany
-  storageClassName: nfs-siclaw
+  storageClassName: nfs
   resources:
     requests:
       storage: 10Gi

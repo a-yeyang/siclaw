@@ -17,6 +17,7 @@ import {
     Compass,
     BrainCircuit,
     KeyRound,
+    Wrench,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -76,6 +77,7 @@ const groups: NavGroup[] = [
             { icon: KeyRound, label: 'Credentials', to: '/credentials' },
             // { icon: Server, label: 'Environments', to: '/environments' }, // Replaced by credential-based workspace system
             { icon: Shield, label: 'Permissions', to: '/permissions', adminOnly: true },
+            { icon: Wrench, label: 'System', to: '/settings/system', adminOnly: true },
         ],
     },
 ];

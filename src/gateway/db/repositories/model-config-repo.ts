@@ -360,6 +360,83 @@ export class ModelConfigRepository {
     };
   }
 
+  /**
+   * Export the full provider/model/embedding config as a settings.json-compatible object.
+   * API keys are included in plain text (internal use only).
+   */
+  async exportSettingsConfig(): Promise<{
+    providers: Record<string, { baseUrl: string; apiKey: string; api: string; authHeader: boolean; models: unknown[] }>;
+    default?: { provider: string; modelId: string };
+    embedding?: { baseUrl: string; apiKey: string; model: string; dimensions: number };
+  }> {
+    // Providers with raw API keys
+    const provRows = await this.db
+      .select({
+        name: modelProviders.name,
+        baseUrl: modelProviders.baseUrl,
+        apiKey: modelProviders.apiKey,
+        api: modelProviders.api,
+        authHeader: modelProviders.authHeader,
+      })
+      .from(modelProviders)
+      .orderBy(modelProviders.sortOrder);
+
+    // All models
+    const modelRows = await this.db
+      .select({
+        modelId: modelEntries.modelId,
+        name: modelEntries.name,
+        provider: modelProviders.name,
+        reasoning: modelEntries.reasoning,
+        inputJson: modelEntries.inputJson,
+        costJson: modelEntries.costJson,
+        contextWindow: modelEntries.contextWindow,
+        maxTokens: modelEntries.maxTokens,
+        compatJson: modelEntries.compatJson,
+      })
+      .from(modelEntries)
+      .innerJoin(modelProviders, eq(modelEntries.providerId, modelProviders.id))
+      .orderBy(modelProviders.sortOrder, modelEntries.sortOrder);
+
+    // Build providers map
+    const providers: Record<string, { baseUrl: string; apiKey: string; api: string; authHeader: boolean; models: unknown[] }> = {};
+    for (const p of provRows) {
+      providers[p.name] = {
+        baseUrl: p.baseUrl ?? "",
+        apiKey: p.apiKey ?? "",
+        api: p.api,
+        authHeader: p.authHeader,
+        models: [],
+      };
+    }
+    for (const m of modelRows) {
+      if (providers[m.provider]) {
+        providers[m.provider].models.push({
+          id: m.modelId,
+          name: m.name,
+          reasoning: m.reasoning,
+          input: m.inputJson,
+          cost: m.costJson,
+          contextWindow: m.contextWindow,
+          maxTokens: m.maxTokens,
+          compat: m.compatJson,
+        });
+      }
+    }
+
+    // Default model
+    const defaultModel = await this.getDefault();
+
+    // Embedding
+    const embCfg = await this.getResolvedEmbeddingConfig();
+
+    return {
+      providers,
+      ...(defaultModel ? { default: defaultModel } : {}),
+      ...(embCfg ? { embedding: embCfg } : {}),
+    };
+  }
+
   async setEmbeddingConfig(provider: string, model: string, dimensions: number) {
     const existing = await this.db
       .select({ id: embeddingConfig.id })

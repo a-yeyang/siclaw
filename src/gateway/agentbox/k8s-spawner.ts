@@ -43,6 +43,11 @@ export class K8sSpawner implements BoxSpawner {
     this.coreApi = this.kc.makeApiClient(k8s.CoreV1Api);
   }
 
+  /** Update the AgentBox image at runtime (takes effect on next spawn) */
+  setImage(image: string): void {
+    this.config.image = image;
+  }
+
   /**
    * Generate Pod name
    */
@@ -99,28 +104,7 @@ export class K8sSpawner implements BoxSpawner {
       { name: "SICLAW_USER_DATA_DIR", value: "/mnt/user-data" },
       { name: "SICLAW_GATEWAY_URL", value: "http://siclaw-gateway.siclaw.svc.cluster.local" },
       { name: "SICLAW_CREDENTIALS_DIR", value: "/home/agentbox/.credentials" },
-      // Inject LLM config from K8s secret
-      {
-        name: "SICLAW_LLM_API_KEY",
-        valueFrom: {
-          secretKeyRef: { name: "siclaw-secrets", key: "llm-api-key" },
-        },
-      },
-      {
-        name: "SICLAW_LLM_BASE_URL",
-        valueFrom: {
-          secretKeyRef: { name: "siclaw-secrets", key: "llm-base-url", optional: true },
-        },
-      },
     ];
-
-    // Pass S3 env vars if configured (for session JSONL backup)
-    for (const key of ["SICLAW_S3_ENDPOINT", "SICLAW_S3_BUCKET", "SICLAW_S3_ACCESS_KEY", "SICLAW_S3_SECRET_KEY"]) {
-      const val = process.env[key];
-      if (val) {
-        env.push({ name: key, value: val });
-      }
-    }
 
     // Pass workspace allowed tools
     if (boxConfig.allowedTools !== undefined) {

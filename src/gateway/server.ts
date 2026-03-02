@@ -168,8 +168,17 @@ export async function startGateway(opts: StartGatewayOptions): Promise<GatewaySe
   // Create RPC methods using AgentBoxManager
   const { methods: rpcMethods, syncCredentialsForUser, syncWorkspaceCredentials } = createRpcMethods(agentBoxManager, broadcast, db, sendToUser, activePromptUsers);
 
+  // System config repo (used by JWT, SSO, S3, etc.)
+  const sysConfigRepo = db ? new SystemConfigRepository(db) : null;
+
+  // Apply DB-stored agentbox image override (takes effect on next pod spawn)
+  if (sysConfigRepo) {
+    const img = await sysConfigRepo.get("system.agentboxImage");
+    if (img) agentBoxManager.setSpawnerImage(img);
+  }
+
   // Auth setup — auto-generate JWT secret on first run if not provided
-  const jwtSecret = await resolveJwtSecret();
+  const jwtSecret = await resolveJwtSecret(sysConfigRepo);
   const userStore = new UserStore(db);
   await userStore.init();
   const bindCodeStore = new BindCodeStore();
@@ -177,7 +186,6 @@ export async function startGateway(opts: StartGatewayOptions): Promise<GatewaySe
   const authMiddleware = createAuthMiddleware(jwtSecret);
 
   // OAuth2 / SSO config — DB values take priority over env vars
-  const sysConfigRepo = db ? new SystemConfigRepository(db) : null;
   let ssoDbConfig: Record<string, string> | undefined;
   if (sysConfigRepo) {
     try { ssoDbConfig = await sysConfigRepo.getAll("sso."); } catch { /* ignore */ }
@@ -525,6 +533,144 @@ export async function startGateway(opts: StartGatewayOptions): Promise<GatewaySe
       return;
     }
 
+    // ─── Internal cron coordination API (used by cron service) ────────
+    // These thin wrappers let cron-main talk to the DB through gateway,
+    // so cron never needs its own database connection.
+
+    if (url.startsWith("/api/internal/cron/") && configRepo) {
+      const cronPath = url.replace("/api/internal/cron/", "").split("?")[0];
+      const fullUrl = new URL(req.url!, `http://${req.headers.host}`);
+
+      // POST endpoints
+      if (method === "POST") {
+        let body = "";
+        req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+        req.on("end", async () => {
+          try {
+            const data = body ? JSON.parse(body) : {};
+
+            if (cronPath === "register") {
+              await configRepo.registerCronInstance(data.instanceId, data.endpoint);
+              res.writeHead(200, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ status: "ok" }));
+              return;
+            }
+
+            if (cronPath === "heartbeat") {
+              await configRepo.updateHeartbeat(data.instanceId, data.jobCount);
+              res.writeHead(200, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ status: "ok" }));
+              return;
+            }
+
+            if (cronPath === "delete-instance") {
+              await configRepo.deleteInstance(data.instanceId);
+              res.writeHead(200, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ status: "ok" }));
+              return;
+            }
+
+            if (cronPath === "release-jobs") {
+              await configRepo.releaseInstanceJobs(data.instanceId);
+              res.writeHead(200, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ status: "ok" }));
+              return;
+            }
+
+            if (cronPath === "claim-job") {
+              const claimed = await configRepo.claimUnassignedJob(data.jobId, data.instanceId);
+              res.writeHead(200, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ claimed }));
+              return;
+            }
+
+            if (cronPath === "job-run") {
+              await configRepo.updateCronJobRun(data.jobId, data.result);
+              res.writeHead(200, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ status: "ok" }));
+              return;
+            }
+
+            if (cronPath === "reassign-jobs") {
+              await configRepo.reassignOrphanedJobs(data.fromInstanceId, data.toInstanceId);
+              res.writeHead(200, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ status: "ok" }));
+              return;
+            }
+
+            res.writeHead(404, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Unknown cron POST endpoint" }));
+          } catch (err) {
+            console.error(`[gateway] cron/${cronPath} error:`, err);
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Internal server error" }));
+          }
+        });
+        return;
+      }
+
+      // GET endpoints
+      if (method === "GET") {
+        (async () => {
+          try {
+            if (cronPath === "jobs") {
+              const instanceId = fullUrl.searchParams.get("instanceId");
+              const unassigned = fullUrl.searchParams.get("unassigned");
+
+              if (instanceId) {
+                const jobs = await configRepo.listCronJobsByInstance(instanceId);
+                res.writeHead(200, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ jobs }));
+                return;
+              }
+              if (unassigned === "1") {
+                const jobs = await configRepo.getUnassignedActiveJobs();
+                res.writeHead(200, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ jobs }));
+                return;
+              }
+              res.writeHead(400, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ error: "instanceId or unassigned=1 required" }));
+              return;
+            }
+
+            // GET /api/internal/cron/jobs/:id
+            if (cronPath.startsWith("jobs/")) {
+              const jobId = cronPath.slice("jobs/".length);
+              const job = await configRepo.getCronJobById(jobId);
+              res.writeHead(200, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ job }));
+              return;
+            }
+
+            if (cronPath === "dead-instances") {
+              const thresholdMs = parseInt(fullUrl.searchParams.get("thresholdMs") || "90000", 10);
+              const instances = await configRepo.getDeadInstances(thresholdMs);
+              res.writeHead(200, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ instances }));
+              return;
+            }
+
+            if (cronPath === "least-loaded") {
+              const thresholdMs = parseInt(fullUrl.searchParams.get("thresholdMs") || "90000", 10);
+              const instance = await configRepo.getLeastLoadedInstance(thresholdMs);
+              res.writeHead(200, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ instance }));
+              return;
+            }
+
+            res.writeHead(404, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Unknown cron GET endpoint" }));
+          } catch (err) {
+            console.error(`[gateway] cron/${cronPath} error:`, err);
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Internal server error" }));
+          }
+        })();
+        return;
+      }
+    }
+
     // Internal cron notification endpoint: POST /api/internal/cron-notify
     if (url === "/api/internal/cron-notify" && method === "POST") {
       let body = "";
@@ -632,6 +778,29 @@ export async function startGateway(opts: StartGatewayOptions): Promise<GatewaySe
           res.end(JSON.stringify({ status: "error", error: errMsg, durationMs }));
         }
       });
+      return;
+    }
+
+    // Internal settings endpoint: GET /api/internal/settings
+    // Returns provider/model/embedding config for AgentBox pods to bootstrap settings.json
+    if (url === "/api/internal/settings" && method === "GET") {
+      if (!db) {
+        res.writeHead(503, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Database not available" }));
+        return;
+      }
+      (async () => {
+        try {
+          const modelConfigRepo = new ModelConfigRepository(db);
+          const settings = await modelConfigRepo.exportSettingsConfig();
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(settings));
+        } catch (err) {
+          console.error("[gateway] settings export error:", err);
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Internal server error" }));
+        }
+      })();
       return;
     }
 
@@ -982,30 +1151,31 @@ function rejectAfterTimeout(ms: number, sessionId: string): Promise<never> {
 }
 
 /**
- * Resolve JWT secret: env var > persisted file > generate new.
- * Persists auto-generated secrets to .siclaw/jwt-secret.key so they survive restarts.
+ * Resolve JWT secret: env var > DB > generate new and persist to DB.
  */
-async function resolveJwtSecret(): Promise<string> {
+async function resolveJwtSecret(sysConfigRepo: SystemConfigRepository | null): Promise<string> {
   if (process.env.SICLAW_JWT_SECRET) {
     return process.env.SICLAW_JWT_SECRET;
   }
 
-  const secretPath = path.join(".siclaw", "jwt-secret.key");
-  try {
-    const existing = fs.readFileSync(secretPath, "utf8").trim();
+  if (sysConfigRepo) {
+    const existing = await sysConfigRepo.get("jwt.secret");
     if (existing) {
-      console.log("[gateway] JWT secret loaded from .siclaw/jwt-secret.key");
+      console.log("[gateway] JWT secret loaded from database");
       return existing;
     }
-  } catch {
-    // File doesn't exist — generate a new secret
   }
 
   const { randomBytes } = await import("node:crypto");
   const generated = randomBytes(32).toString("hex");
-  fs.mkdirSync(".siclaw", { recursive: true });
-  fs.writeFileSync(secretPath, generated, { mode: 0o600 });
-  console.log("[gateway] Generated new JWT secret → .siclaw/jwt-secret.key");
+
+  if (sysConfigRepo) {
+    await sysConfigRepo.set("jwt.secret", generated);
+    console.log("[gateway] Generated new JWT secret → database");
+  } else {
+    console.warn("[gateway] Generated JWT secret but no DB to persist — tokens will invalidate on restart");
+  }
+
   return generated;
 }
 

@@ -3421,7 +3421,7 @@ export function createRpcMethods(
     const ALLOWED_SECTIONS: Record<string, string[]> = {
       sso: ["sso.enabled", "sso.issuer", "sso.clientId", "sso.clientSecret", "sso.redirectUri"],
       s3: ["s3.endpoint", "s3.bucket", "s3.accessKey", "s3.secretKey"],
-      system: ["system.baseUrl", "system.platformUrl"],
+      system: ["system.baseUrl", "system.platformUrl", "system.agentboxImage"],
     };
 
     const allowedKeys = ALLOWED_SECTIONS[section];
@@ -3437,6 +3437,12 @@ export function createRpcMethods(
     }
 
     await sysConfigRepo.setMany(entries);
+
+    // Apply agentbox image change at runtime
+    if (section === "system" && entries["system.agentboxImage"]) {
+      agentBoxManager.setSpawnerImage(entries["system.agentboxImage"]);
+    }
+
     return { ok: true };
   });
 

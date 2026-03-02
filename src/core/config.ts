@@ -111,9 +111,12 @@ let cached: SiclawConfig | null = null;
 
 /**
  * Resolve the path to settings.json.
- * Looks for `.siclaw/config/settings.json` relative to cwd.
+ * Uses SICLAW_CONFIG_DIR env var if set, otherwise `.siclaw/config` relative to cwd.
  */
 export function getConfigPath(): string {
+  if (process.env.SICLAW_CONFIG_DIR) {
+    return path.resolve(process.env.SICLAW_CONFIG_DIR, "settings.json");
+  }
   return path.resolve(process.cwd(), ".siclaw", "config", "settings.json");
 }
 
@@ -137,9 +140,21 @@ export function loadConfig(): SiclawConfig {
 
   cached = deepMerge(DEFAULTS as unknown as Record<string, unknown>, fileConfig) as unknown as SiclawConfig;
 
-  // Environment variable overrides (used by process-spawner to assign unique ports)
+  // Environment variable overrides (used by process-spawner / k8s-spawner)
   if (process.env.SICLAW_AGENTBOX_PORT) {
     cached.server.port = parseInt(process.env.SICLAW_AGENTBOX_PORT, 10);
+  }
+  if (process.env.SICLAW_USER_DATA_DIR) {
+    cached.paths.userDataDir = process.env.SICLAW_USER_DATA_DIR;
+  }
+  if (process.env.SICLAW_SKILLS_DIR) {
+    cached.paths.skillsDir = process.env.SICLAW_SKILLS_DIR;
+  }
+  if (process.env.SICLAW_CREDENTIALS_DIR) {
+    cached.paths.credentialsDir = process.env.SICLAW_CREDENTIALS_DIR;
+  }
+  if (process.env.SICLAW_GATEWAY_URL) {
+    cached.server.gatewayUrl = process.env.SICLAW_GATEWAY_URL;
   }
 
   return cached;

@@ -9,7 +9,17 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHttpServer } from "./agentbox/http-server.js";
 import { AgentBoxSessionManager } from "./agentbox/session.js";
-import { loadConfig, reloadConfig } from "./core/config.js";
+import { loadConfig, reloadConfig, getConfigPath } from "./core/config.js";
+
+// Use /tmp for config in containers where cwd may be read-only
+if (!process.env.SICLAW_CONFIG_DIR) {
+  const cwdConfigDir = path.resolve(process.cwd(), ".siclaw", "config");
+  try {
+    fs.mkdirSync(cwdConfigDir, { recursive: true });
+  } catch {
+    process.env.SICLAW_CONFIG_DIR = "/tmp/.siclaw/config";
+  }
+}
 
 const config = loadConfig();
 const PORT = config.server.port;
@@ -23,7 +33,7 @@ async function main() {
       });
       if (resp.ok) {
         const remoteConfig = await resp.json();
-        const configPath = path.resolve(process.cwd(), ".siclaw", "config", "settings.json");
+        const configPath = getConfigPath();
         const dir = path.dirname(configPath);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(configPath, JSON.stringify(remoteConfig, null, 2) + "\n");

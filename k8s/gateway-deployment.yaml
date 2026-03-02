@@ -3,12 +3,11 @@
 #
 # Prerequisites:
 # 1. Create namespace: kubectl create namespace siclaw
-# 2. Create secrets: kubectl create secret generic siclaw-secrets \
-#      --from-literal=jwt-secret=your-jwt-secret \
-#      --from-literal=llm-api-key=your-llm-api-key \
+# 2. Apply PVC: kubectl apply -f k8s/siclaw-skills-pvc.yaml
+# 3. Create secret with MySQL connection URL:
+#    kubectl create secret generic siclaw-secrets \
+#      --from-literal=database-url='mysql://user:pass@host:3306/siclaw' \
 #      -n siclaw
-# 3. Replace ${REGISTRY} with your private registry address
-# 4. Users stored in DB (no users.json needed)
 
 apiVersion: apps/v1
 kind: Deployment
@@ -28,24 +27,9 @@ spec:
         app: siclaw-gateway
     spec:
       serviceAccountName: siclaw-gateway
-      initContainers:
-      - name: init-skills-dir
-        image: mysql:8
-        command:
-        - sh
-        - -c
-        - |
-          mkdir -p /mnt/skills/core /mnt/skills/team /mnt/skills/user
-          chmod -R 777 /mnt/skills
-          if [ ! -d /mnt/skills/.git ]; then
-            cd /mnt/skills && git init && git config user.email siclaw@system && git config user.name Siclaw && git commit --allow-empty -m "init skills repo"
-          fi
-        volumeMounts:
-        - name: skills-pv
-          mountPath: /mnt/skills
       containers:
       - name: gateway
-        image: siclaw-gateway:latest
+        image: siclaw-gateway:latest  # Replace with your registry image
         imagePullPolicy: Always
         ports:
         - name: http
@@ -64,59 +48,15 @@ spec:
               fieldPath: metadata.namespace
         - name: SICLAW_AGENTBOX_IMAGE
           value: "siclaw-agentbox:latest"
-        - name: SICLAW_JWT_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: siclaw-secrets
-              key: jwt-secret
+        - name: SICLAW_SKILLS_DIR
+          value: "/mnt/skills"
+        - name: SICLAW_CRON_SERVICE_URL
+          value: "http://siclaw-cron.siclaw.svc.cluster.local"
         - name: SICLAW_DATABASE_URL
           valueFrom:
             secretKeyRef:
               name: siclaw-secrets
               key: database-url
-        - name: SICLAW_CRON_SERVICE_URL
-          value: "http://siclaw-cron.siclaw.svc.cluster.local"
-        - name: SICLAW_LLM_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: siclaw-secrets
-              key: llm-api-key
-        - name: SICLAW_SSO_ISSUER
-          valueFrom:
-            secretKeyRef:
-              name: siclaw-sso
-              key: sso-issuer
-        - name: SICLAW_SSO_CLIENT_ID
-          valueFrom:
-            secretKeyRef:
-              name: siclaw-sso
-              key: sso-client-id
-        - name: SICLAW_SSO_CLIENT_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: siclaw-sso
-              key: sso-client-secret
-        - name: SICLAW_SSO_REDIRECT_URI
-          valueFrom:
-            secretKeyRef:
-              name: siclaw-sso
-              key: sso-redirect-uri
-        - name: SICLAW_SKILLS_DIR
-          value: "/mnt/skills"
-        - name: SICLAW_S3_ENDPOINT
-          value: ""
-        - name: SICLAW_S3_BUCKET
-          value: ""
-        - name: SICLAW_S3_ACCESS_KEY
-          valueFrom:
-            secretKeyRef:
-              name: siclaw-secrets
-              key: s3-access-key
-        - name: SICLAW_S3_SECRET_KEY
-          valueFrom:
-            secretKeyRef:
-              name: siclaw-secrets
-              key: s3-secret-key
         resources:
           requests:
             memory: "128Mi"
@@ -206,4 +146,3 @@ subjects:
 - kind: ServiceAccount
   name: siclaw-gateway
   namespace: siclaw
-

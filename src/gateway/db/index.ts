@@ -133,6 +133,12 @@ function acquireSqliteLock(
       writeFileSync(lockPath, String(process.pid));
       return;
     }
+    // In containers, every process is PID 1. If the lock holds our own PID,
+    // it's a stale lock from a previous container — safe to reclaim.
+    if (holderPid === process.pid) {
+      writeFileSync(lockPath, String(process.pid));
+      return;
+    }
     try {
       process.kill(holderPid, 0); // signal 0 = existence check
     } catch (killErr: any) {

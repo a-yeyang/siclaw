@@ -16,7 +16,7 @@
 #   make status          — Show K8s deployment status
 #   make help            — Show all targets
 
-REGISTRY ?= registry-cn-shanghai.siflow.cn/k8s/siclaw
+REGISTRY ?= scitix
 NAMESPACE ?= siclaw
 TAG       ?= latest
 
@@ -90,13 +90,19 @@ push-cron:
 
 # ==================== Deploy ====================
 
-.PHONY: deploy deploy-gateway deploy-agentbox deploy-cron restart
+.PHONY: deploy deploy-gateway deploy-agentbox deploy-cron restart apply
 
-## Full pipeline: build → docker → push → restart all
-deploy: build-docker push restart
+## Apply K8s resources (create or update Deployments, Services, PVCs, RBAC)
+apply:
+	kubectl apply -f k8s/siclaw-skills-pvc.yaml
+	kubectl apply -f k8s/gateway-deployment.yaml
+
+## Full pipeline: build → docker → push → apply → restart all
+deploy: build-docker push apply restart
 
 ## Deploy gateway only
 deploy-gateway: build-docker-gateway push-gateway
+	kubectl apply -f k8s/gateway-deployment.yaml
 	kubectl -n $(NAMESPACE) rollout restart deployment siclaw-gateway
 	kubectl -n $(NAMESPACE) rollout status deployment siclaw-gateway --timeout=120s
 
@@ -107,6 +113,7 @@ deploy-agentbox: build-docker-agentbox push-agentbox
 
 ## Deploy cron worker only
 deploy-cron: build-docker-cron push-cron
+	kubectl apply -f k8s/cron-deployment.yaml
 	kubectl -n $(NAMESPACE) rollout restart deployment siclaw-cron
 	kubectl -n $(NAMESPACE) rollout status deployment siclaw-cron --timeout=120s
 
@@ -216,7 +223,8 @@ help:
 	@echo "  build-docker     Build all Docker images"
 	@echo ""
 	@echo "Deploy (K8s):"
-	@echo "  deploy           Full: build + docker + push + restart"
+	@echo "  deploy           Full: build + docker + push + apply + restart"
+	@echo "  apply            Apply K8s resources (create/update)"
 	@echo "  deploy-gateway   Deploy gateway only"
 	@echo "  deploy-agentbox  Deploy agentbox only"
 	@echo "  deploy-cron      Deploy cron only"
