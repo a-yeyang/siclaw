@@ -2,7 +2,7 @@
  * Database Connection Factory
  *
  * Creates a Drizzle ORM instance connected to MySQL or SQLite.
- * Requires SICLAW_DATABASE_URL environment variable.
+ * Defaults to SQLite at .siclaw/data.sqlite when SICLAW_DATABASE_URL is not set.
  *
  * URL schemes:
  *   mysql://...  → MySQL via mysql2
@@ -28,12 +28,7 @@ let _writeFileSync: typeof import("node:fs").writeFileSync | null = null;
 export async function createDb(): Promise<Database> {
   if (_db) return _db;
 
-  const dbUrl = process.env.SICLAW_DATABASE_URL;
-  if (!dbUrl) {
-    throw new Error(
-      "SICLAW_DATABASE_URL is required. Example: mysql://user:pass@host:3306/siclaw or sqlite:/path/to/db",
-    );
-  }
+  const dbUrl = process.env.SICLAW_DATABASE_URL || "sqlite:.siclaw/data.sqlite";
 
   const urlWantsSqlite = dbUrl.startsWith("sqlite:") || dbUrl.startsWith("file:");
 
@@ -130,12 +125,26 @@ function acquireSqliteLock(
   } catch (err: any) {
     if (err.code !== "EEXIST") throw err;
     // Lock file exists — check if the holder is still alive
-    let holderPid: number;
+    let holderPid: number | undefined;
     try {
       holderPid = parseInt(readFileSync(lockPath, "utf8"), 10);
-      process.kill(holderPid, 0); // signal 0 = existence check
     } catch {
-      // Holder process is dead — reclaim stale lock
+      // Can't read lock file — reclaim it
+      writeFileSync(lockPath, String(process.pid));
+      return;
+    }
+    try {
+      process.kill(holderPid, 0); // signal 0 = existence check
+    } catch (killErr: any) {
+      // ESRCH = process does not exist → safe to reclaim
+      // EPERM = process exists but we lack permission → do NOT reclaim
+      if (killErr?.code === "EPERM") {
+        throw new Error(
+          `SQLite database locked by process ${holderPid} (still running, no permission to probe). ` +
+          `If the process is dead, remove: ${lockPath}`,
+        );
+      }
+      // Process is dead — reclaim stale lock
       writeFileSync(lockPath, String(process.pid));
       return;
     }

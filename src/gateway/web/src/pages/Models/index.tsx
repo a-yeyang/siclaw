@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Settings, Layers, Globe, Key, Save, Trash2 } from 'lucide-react';
+import { Settings, Layers, Globe, Key, Save, Trash2, Plus } from 'lucide-react';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { usePermissions } from '@/hooks/usePermissions';
 import { SettingsDialog } from './SettingsDialog';
 import { ModelsDialog } from './ModelsDialog';
+import { AddProviderDialog } from './AddProviderDialog';
 
 interface ProviderInfo {
     name: string;
@@ -43,6 +44,7 @@ export function ModelsPage() {
 
     const [settingsProvider, setSettingsProvider] = useState<ProviderInfo | null>(null);
     const [modelsProvider, setModelsProvider] = useState<string | null>(null);
+    const [showAddProvider, setShowAddProvider] = useState(false);
 
     // Embedding state
     const [embeddingProvider, setEmbeddingProvider] = useState('');
@@ -302,7 +304,18 @@ export function ModelsPage() {
 
                 {/* Provider Cards */}
                 <section>
-                    <h2 className="text-lg font-semibold text-gray-900 mb-4">Providers</h2>
+                    <div className="flex items-center justify-between mb-4">
+                        <h2 className="text-lg font-semibold text-gray-900">Providers</h2>
+                        {isAdmin && (
+                            <button
+                                onClick={() => setShowAddProvider(true)}
+                                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors"
+                            >
+                                <Plus className="w-4 h-4" />
+                                Add Provider
+                            </button>
+                        )}
+                    </div>
                     {providers.length === 0 ? (
                         <p className="text-sm text-gray-400 text-center py-12">No providers configured</p>
                     ) : (
@@ -361,6 +374,17 @@ export function ModelsPage() {
                     )}
                 </section>
             </div>
+
+            {/* Add Provider Dialog */}
+            {showAddProvider && (
+                <AddProviderDialog
+                    onClose={() => setShowAddProvider(false)}
+                    onSave={async (name, baseUrl, apiKey) => {
+                        await handleSaveSettings(name, baseUrl, apiKey);
+                        setShowAddProvider(false);
+                    }}
+                />
+            )}
 
             {/* Settings Dialog */}
             {settingsProvider && (

@@ -49,9 +49,20 @@ export class ModelConfigRepository {
       .limit(1);
 
     if (rows.length === 0) {
-      throw new Error(`Provider "${providerName}" not found`);
+      // INSERT new provider
+      await this.db.insert(modelProviders).values({
+        id: crypto.randomUUID(),
+        name: providerName,
+        baseUrl: baseUrl ?? null,
+        apiKey: apiKey ?? null,
+        api: "openai-completions",
+        authHeader: false,
+        sortOrder: 0,
+      });
+      return;
     }
 
+    // UPDATE existing provider
     const updates: Record<string, unknown> = { updatedAt: new Date() };
     if (baseUrl !== undefined) updates.baseUrl = baseUrl;
     if (apiKey !== undefined) updates.apiKey = apiKey;
