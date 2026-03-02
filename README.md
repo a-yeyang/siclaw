@@ -1,65 +1,37 @@
+<div align="center">
+
+<!-- Logo placeholder — replace with actual logo -->
+<img src="docs/assets/logo-placeholder.png" alt="Siclaw Logo" width="200" height="200" onerror="this.style.display='none'" />
+
 # Siclaw
 
-AI-powered SRE platform that turns natural language into Kubernetes diagnostics.
+**AI-powered SRE copilot — from plain language to root-cause analysis**
 
-Siclaw gives every engineer an on-call copilot — describe a problem in plain language, and the agent runs kubectl, reads logs, traces network paths, and delivers a root-cause analysis. It works from a terminal, a web UI, or directly inside Feishu / DingTalk / Discord.
+[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-## Core Capabilities
+[English](README.md) | [中文](README.zh-CN.md)
 
-### Autonomous Kubernetes Diagnostics
+</div>
 
-The agent has 20+ built-in tools (restricted bash, kubectl, node/pod exec, network namespace introspection) and follows a **safe-by-default** principle — read-only by default, explicit confirmation before any mutation.
+---
 
-### Deep Investigation
+Siclaw gives every engineer an on-call copilot. Describe a problem in plain language and the agent runs kubectl, reads logs, traces network paths, and delivers a root-cause analysis — from a terminal, a web UI, or directly inside Feishu / DingTalk / Discord.
 
-For complex incidents, activate **Deep Investigation** mode. The engine runs a structured 4-phase workflow:
+- **Autonomous K8s Diagnostics** — 20+ built-in tools, safe-by-default (read-only unless you confirm)
+- **Deep Investigation** — 4-phase hypothesis-driven sub-agent engine for complex incidents
+- **Pluggable LLM** — Any OpenAI-compatible provider (Qwen, DeepSeek, GPT-4o …) + Anthropic Claude
+- **Skill System** — Hot-reloadable diagnostic playbooks that the agent discovers at runtime
 
-1. **Triage** — Confirm symptoms with quick commands
-2. **Hypotheses** — Rank possible root causes (user picks which to explore)
-3. **Deep Search** — Spawn parallel sub-agents to validate each hypothesis with budget control
-4. **Conclusion** — Synthesize findings into actionable recommendations
+## Features
 
-### Skill System
-
-Skills are reusable diagnostic playbooks (a SKILL.md spec + shell scripts) that the agent discovers and executes at runtime.
-
-| Tier | Location | Description |
-|------|----------|-------------|
-| Core | `skills/core/` | Built-in (node logs, network gateway, image pull debug, etc.) |
-| Team | `skills/team/` | Shared across all users, admin-managed |
-| Personal | `skills/user/` | Per-user, created via the `create_skill` tool |
-
-Skills are hot-reloadable — update on disk or via the web editor, and active sessions pick up changes instantly.
-
-### Multi-User Gateway
-
-A central HTTP + WebSocket server that manages isolated **AgentBox** pods (one per user per workspace) on Kubernetes.
-
-- **Web UI** — React frontend with chat, skill editor, cron scheduler, credential vault
-- **IM Channels** — Feishu, DingTalk, Discord (route messages through AgentBox pods)
-- **SSO** — OIDC/Dex integration, or local username/password
-- **Cron** — Schedule recurring agent tasks with multi-instance HA coordination
-- **Triggers** — Webhook endpoints for Prometheus / PagerDuty / custom alerts
-- **Workspaces** — Per-project isolation of skills, tools, environments, and credentials
-
-### Pluggable LLM Backend
-
-Siclaw supports two agent runtimes and any OpenAI-compatible LLM provider:
-
-| Brain | Package | Best for |
-|-------|---------|----------|
-| `pi-agent` | `@mariozechner/pi-coding-agent` | OpenAI-compatible providers (Qwen, DeepSeek, Kimi, etc.) |
-| `claude-sdk` | `@anthropic-ai/claude-agent-sdk` | Anthropic Claude with native tool use |
-
-Configure providers from the **Settings** page in the web UI — switch models per session.
-
-### MCP Tool Servers
-
-Extend the agent with external [Model Context Protocol](https://modelcontextprotocol.io) servers. Supports stdio, SSE, and streamable-http transports. Configure in `.siclaw/config/settings.json` (see `settings.example.json`).
-
-### Persistent Memory
-
-The agent maintains a per-user memory store (markdown files + vector embeddings) that survives across sessions. Past investigations, environment quirks, and team conventions are automatically recalled.
+| | |
+|---|---|
+| **Terminal UI** — Interactive TUI for local diagnostics with session history and `--prompt` single-shot mode | **Web UI** — React frontend with chat, skill editor, cron scheduler, and credential vault |
+| **IM Channels** — Route diagnostics through Feishu, DingTalk, or Discord | **Deep Investigation** — Parallel sub-agents with adaptive budget and structured 4-phase workflow |
+| **Skill System** — Core + Team + Personal skill tiers, hot-reloadable from disk or web editor | **MCP Tool Servers** — Extend the agent with external [Model Context Protocol](https://modelcontextprotocol.io) servers |
+| **Persistent Memory** — Per-user memory store (markdown + vector embeddings) across sessions | **Webhook Triggers** — Prometheus / PagerDuty / custom alerts trigger agent investigations |
 
 ## Architecture
 
@@ -71,14 +43,14 @@ The agent maintains a per-user memory store (markdown files + vector embeddings)
   │       Gateway          │  Control plane: auth, routing, DB, cron
   │    (HTTP + WebSocket)  │
   └──────────┬────────────┘
-             │ K8s API
+             │ K8s API or Process Spawn
              ▼
   ┌───────────────────────┐
-  │      AgentBox Pod      │  Execution plane: one per user per workspace
+  │      AgentBox          │  Execution plane: one per user per workspace
   │  ┌─────────────────┐  │
   │  │  Agent Runtime   │  │  pi-agent or claude-sdk
   │  │  ┌───────────┐  │  │
-  │  │  │  Tools     │  │  │  kubectl, bash, node_exec, deep_search, ...
+  │  │  │  Tools     │  │  │  kubectl, bash, node_exec, deep_search …
   │  │  │  Skills    │  │  │  core/ + team/ + personal/
   │  │  │  MCP       │  │  │  external tool servers
   │  │  │  Memory    │  │  │  vector search + markdown
@@ -93,78 +65,150 @@ The agent maintains a per-user memory store (markdown files + vector embeddings)
 
 ## Quick Start
 
-### CLI Mode (Local Development)
+Siclaw supports three deployment profiles. Pick the one that fits your use case.
+
+### 1. TUI Mode — Personal, local, lowest barrier
+
+Run the agent directly in your terminal. No server, no database.
 
 ```bash
+# Build
 npm ci
 npm run build
 
-# Interactive TUI
+# Configure LLM provider
+mkdir -p .siclaw/config
+cp settings.example.json .siclaw/config/settings.json
+# Edit .siclaw/config/settings.json with your LLM provider details
+
+# Run (interactive)
 node siclaw-tui.mjs
 
 # Single-shot
 node siclaw-tui.mjs --prompt "Why is pod nginx-abc in CrashLoopBackOff?"
+
+# Continue last session
+node siclaw-tui.mjs --continue
 ```
 
-Requires `.siclaw/config/settings.json` with at least one LLM provider and a valid kubeconfig:
+> **Tip:** Any OpenAI-compatible endpoint works — swap `baseUrl` for DeepSeek, Qwen, Kimi, or a local Ollama server.
+
+### 2. Personal Server — VM or laptop, recommended for daily use
+
+A lightweight web UI backed by SQLite. No MySQL, no Docker required — just start the server and configure everything in the browser.
 
 ```bash
-mkdir -p .siclaw/config
-cp settings.example.json .siclaw/config/settings.json
-# Edit .siclaw/config/settings.json with your LLM provider details
-```
+npm ci
+npm run build
+npm run build:web
 
-### Gateway Mode (Multi-User)
-
-```bash
-# Set required env vars
-export SICLAW_DATABASE_URL="mysql://user:pass@host:3306/siclaw"
-export SICLAW_JWT_SECRET="your-secret"
-export SICLAW_LLM_API_KEY="your-api-key"
-
-# Start gateway
-node siclaw-gateway.mjs          # local spawner
-node siclaw-gateway.mjs --k8s    # K8s pod spawner
+# Start the server (SQLite database is created automatically)
+node siclaw-gateway.mjs --process
 
 # Open http://localhost:3000
+# Login: admin / admin (default credentials)
+# Go to Settings to configure your LLM provider
 ```
 
-### Docker (Production)
+The server uses SQLite by default and auto-generates a JWT secret on first run. All configuration — LLM providers, models, credentials — is done through the **Settings** page in the web UI.
+
+### 3. Kubernetes — Team / enterprise
+
+Full multi-user deployment with isolated AgentBox pods, SSO, and IM channels.
 
 ```bash
-# Build all images
+# Build images
 make build-docker
 
-# Deploy to K8s
-make deploy
+# Create namespace and secrets
+kubectl create namespace siclaw
+kubectl create secret generic siclaw-secrets \
+  --namespace=siclaw \
+  --from-literal=jwt-secret="$(openssl rand -hex 32)" \
+  --from-literal=database-url="mysql://user:pass@host:3306/siclaw" \
+  --from-literal=llm-api-key="sk-YOUR-KEY"
+
+# Deploy
+kubectl apply -f k8s/gateway-deployment.yaml
+kubectl apply -f k8s/cron-deployment.yaml
 ```
 
-Three images: `siclaw-gateway`, `siclaw-agentbox`, `siclaw-cron`.
+See [`k8s/README.md`](k8s/README.md) for the full deployment guide, resource tuning, and HA setup.
 
 ## Configuration
 
-### Files
+### settings.json (TUI mode)
 
-| File | Purpose |
-|------|---------|
-| `settings.example.json` | Example config — copy to `.siclaw/config/settings.json` |
-| `skills/core/` | Built-in diagnostic skills |
-| `k8s/` | Kubernetes deployment manifests |
+Minimal example — copy `settings.example.json` to `.siclaw/config/settings.json`:
+
+```json
+{
+  "providers": {
+    "default": {
+      "baseUrl": "https://api.openai.com/v1",
+      "apiKey": "sk-YOUR-KEY",
+      "models": [{ "id": "gpt-4o", "name": "GPT-4o" }]
+    }
+  }
+}
+```
+
+<details>
+<summary><b>Full settings.json reference</b></summary>
+
+```json
+{
+  "providers": {
+    "provider-name": {
+      "baseUrl": "https://api.example.com/v1",
+      "apiKey": "your-key",
+      "api": "openai-completions",
+      "authHeader": true,
+      "models": [
+        {
+          "id": "model-id",
+          "name": "Display Name",
+          "reasoning": false,
+          "contextWindow": 128000,
+          "maxTokens": 16384,
+          "cost": { "input": 2.5, "output": 10.0, "cacheRead": 0.5, "cacheWrite": 3.0 }
+        }
+      ]
+    }
+  },
+  "default": { "provider": "provider-name", "modelId": "model-id" },
+  "embedding": {
+    "baseUrl": "https://api.example.com/v1",
+    "apiKey": "your-key",
+    "model": "BAAI/bge-m3",
+    "dimensions": 1024
+  },
+  "mcpServers": {
+    "server-name": {
+      "command": "npx",
+      "args": ["-y", "@some/mcp-server"]
+    }
+  },
+  "debugImage": "busybox:latest",
+  "debug": false
+}
+```
+
+</details>
 
 ### Environment Variables
 
-**Gateway:**
+**Gateway / Personal Server:**
 
-| Variable | Description |
-|----------|-------------|
-| `SICLAW_DATABASE_URL` | MySQL connection string |
-| `SICLAW_JWT_SECRET` | JWT signing secret |
-| `SICLAW_LLM_API_KEY` | API key for LLM provider |
-| `SICLAW_AGENTBOX_IMAGE` | AgentBox container image |
-| `SICLAW_K8S_NAMESPACE` | Kubernetes namespace (default: `default`) |
-| `SICLAW_SSO_ISSUER` | OIDC issuer URL (enables SSO) |
-| `SICLAW_S3_ENDPOINT` | S3-compatible endpoint for skill/session backup |
-| `SICLAW_CRON_SERVICE_URL` | Cron worker service URL |
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SICLAW_DATABASE_URL` | `mysql://…` or `sqlite:path` | `sqlite:.siclaw/data.sqlite` |
+| `SICLAW_JWT_SECRET` | JWT signing secret | Auto-generated on first run |
+| `SICLAW_LLM_API_KEY` | Default LLM API key | Configure in web UI Settings |
+| `SICLAW_ADMIN_PASSWORD` | Initial admin password | `admin` |
+| `SICLAW_AGENTBOX_IMAGE` | AgentBox container image (K8s mode) | `siclaw-agentbox:latest` |
+| `SICLAW_K8S_NAMESPACE` | K8s namespace for AgentBox pods | `default` |
+| `SICLAW_BASE_URL` | Public-facing base URL | `http://localhost:3000` |
 
 **AgentBox:**
 
@@ -172,10 +216,52 @@ Three images: `siclaw-gateway`, `siclaw-agentbox`, `siclaw-cron`.
 |----------|-------------|
 | `SICLAW_LLM_API_KEY` | API key (injected from K8s secret) |
 | `SICLAW_GATEWAY_URL` | Internal gateway URL |
-| `SICLAW_DEBUG_IMAGE` | Debug pod image (default: `busybox:latest`) |
+| `SICLAW_DEBUG_IMAGE` | Debug pod image (`busybox:latest`) |
 | `SICLAW_EMBEDDING_BASE_URL` | Embedding API for memory indexing |
 
-SSO, S3, and system URLs can also be configured from the **Settings > System** page in the web UI (admin only, stored in DB).
+<details>
+<summary><b>SSO / S3 / Cron — advanced variables</b></summary>
+
+| Variable | Description |
+|----------|-------------|
+| `SICLAW_SSO_ISSUER` | OIDC issuer URL (enables SSO) |
+| `SICLAW_SSO_CLIENT_ID` | OIDC client ID |
+| `SICLAW_SSO_CLIENT_SECRET` | OIDC client secret |
+| `SICLAW_SSO_REDIRECT_URI` | OIDC redirect URI |
+| `SICLAW_S3_ENDPOINT` | S3-compatible endpoint for backups |
+| `SICLAW_S3_BUCKET` | S3 bucket name |
+| `SICLAW_S3_ACCESS_KEY` | S3 access key |
+| `SICLAW_S3_SECRET_KEY` | S3 secret key |
+| `SICLAW_CRON_SERVICE_URL` | Internal cron service URL |
+| `SICLAW_CRON_API_PORT` | Cron API listen port (`3100`) |
+
+SSO, S3, and cron settings can also be configured from **Settings > System** in the web UI (admin only).
+
+</details>
+
+<details>
+<summary><b>IM Channels — Feishu / DingTalk / Discord</b></summary>
+
+### Feishu (Lark)
+
+Configure a Feishu bot in **Settings > Channels** of the web UI. You'll need:
+- App ID and App Secret from the [Feishu Open Platform](https://open.feishu.cn/)
+- Event subscription URL: `https://your-domain/api/channels/feishu/event`
+- Scopes: `im:message`, `im:message.group_at_msg`, `im:resource`
+
+### DingTalk
+
+Configure a DingTalk bot in **Settings > Channels**. You'll need:
+- Robot webhook URL and signing secret
+- Outgoing callback URL: `https://your-domain/api/channels/dingtalk/event`
+
+### Discord
+
+Configure a Discord bot in **Settings > Channels**. You'll need:
+- Bot token from the [Discord Developer Portal](https://discord.com/developers/applications)
+- Scopes: `bot`, `messages.read`
+
+</details>
 
 ## Project Structure
 
@@ -200,19 +286,19 @@ src/
 ├── memory/                  # Vector + keyword search indexer
 ├── gateway/
 │   ├── server.ts            # HTTP + WebSocket server
-│   ├── rpc-methods.ts       # All RPC handlers
 │   ├── auth/                # JWT, SSO, user store
-│   ├── agentbox/            # K8s pod spawner + local spawner
-│   ├── channels/            # IM platform integrations
-│   ├── db/                  # Drizzle ORM schema + repositories
+│   ├── agentbox/            # K8s pod spawner + process spawner
+│   ├── channels/            # Feishu, DingTalk, Discord
+│   ├── db/                  # Drizzle ORM (MySQL + SQLite)
 │   └── web/                 # React frontend (Vite + Tailwind)
 ├── lib/
 │   ├── s3-storage.ts        # S3/OSS for skill versions
 │   └── s3-backup.ts         # Session JSONL backup
 skills/
-├── core/                    # Built-in skills (8)
+├── core/                    # Built-in skills (10)
 ├── team/                    # Team-shared skills
-└── extension/               # Optional extension skills
+├── extension/               # Optional extension skills
+└── platform/                # Skill management tools
 k8s/                         # Kubernetes manifests
 ```
 
@@ -222,13 +308,17 @@ k8s/                         # Kubernetes manifests
 |-------|-----------|
 | Runtime | Node.js 22+ (ESM-only) |
 | Language | TypeScript 5.8 |
-| Agent | pi-coding-agent / claude-agent-sdk |
-| Database | MySQL + Drizzle ORM |
+| Agent | [pi-coding-agent](https://github.com/nicholasgriffintn/pi-coding-agent) / [claude-agent-sdk](https://github.com/anthropics/claude-agent-sdk) |
+| Database | MySQL or SQLite (via [sql.js](https://github.com/sql-js/sql.js)) + Drizzle ORM |
 | Frontend | React + Vite + Tailwind CSS |
 | K8s Client | @kubernetes/client-node |
 | MCP | @modelcontextprotocol/sdk |
 | Realtime | WebSocket (ws) |
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, architecture overview, and pull request guidelines.
+
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE) for details.
+[Apache License 2.0](LICENSE)
