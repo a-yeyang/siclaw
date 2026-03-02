@@ -2,7 +2,7 @@
  * Database Connection Factory
  *
  * Creates a Drizzle ORM instance connected to MySQL or SQLite.
- * Requires SICLAW_DATABASE_URL environment variable.
+ * Defaults to SQLite at .siclaw/data.sqlite when SICLAW_DATABASE_URL is not set.
  *
  * URL schemes:
  *   mysql://...  → MySQL via mysql2
@@ -28,12 +28,7 @@ let _writeFileSync: typeof import("node:fs").writeFileSync | null = null;
 export async function createDb(): Promise<Database> {
   if (_db) return _db;
 
-  const dbUrl = process.env.SICLAW_DATABASE_URL;
-  if (!dbUrl) {
-    throw new Error(
-      "SICLAW_DATABASE_URL is required. Example: mysql://user:pass@host:3306/siclaw or sqlite:/path/to/db",
-    );
-  }
+  const dbUrl = process.env.SICLAW_DATABASE_URL || "sqlite:.siclaw/data.sqlite";
 
   const urlWantsSqlite = dbUrl.startsWith("sqlite:") || dbUrl.startsWith("file:");
 

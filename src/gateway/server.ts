@@ -132,20 +132,16 @@ export async function startGateway(opts: StartGatewayOptions): Promise<GatewaySe
     }
   };
 
-  // Initialize database (optional — if SICLAW_DATABASE_URL is set)
+  // Initialize database (defaults to SQLite if SICLAW_DATABASE_URL is not set)
   let db: Database | null = null;
-  if (process.env.SICLAW_DATABASE_URL) {
-    try {
-      db = await createDb();
-      await initSchema(db);
-      console.log("[gateway] Database initialized");
-    } catch (err) {
-      console.error("[gateway] Database init failed:", err);
-      console.warn("[gateway] Continuing without database");
-      db = null;
-    }
-  } else {
-    console.log("[gateway] SICLAW_DATABASE_URL not set, running without database");
+  try {
+    db = await createDb();
+    await initSchema(db);
+    console.log("[gateway] Database initialized");
+  } catch (err) {
+    console.error("[gateway] Database init failed:", err);
+    console.warn("[gateway] Continuing without database");
+    db = null;
   }
 
   // Config repo for webhook route
@@ -179,8 +175,8 @@ export async function startGateway(opts: StartGatewayOptions): Promise<GatewaySe
   // Create RPC methods using AgentBoxManager
   const { methods: rpcMethods, syncCredentialsForUser, syncWorkspaceCredentials } = createRpcMethods(agentBoxManager, broadcast, db, sendToUser, activePromptUsers);
 
-  // Auth setup
-  const jwtSecret = process.env.SICLAW_JWT_SECRET || "dev-secret-change-in-production";
+  // Auth setup — auto-generate JWT secret on first run if not provided
+  const jwtSecret = await resolveJwtSecret();
   const userStore = new UserStore(db);
   await userStore.init();
   const bindCodeStore = new BindCodeStore();
@@ -990,6 +986,34 @@ function rejectAfterTimeout(ms: number, sessionId: string): Promise<never> {
   return new Promise((_, reject) =>
     setTimeout(() => reject(new Error(`agent-prompt session=${sessionId} timed out after ${ms / 1000}s`)), ms),
   );
+}
+
+/**
+ * Resolve JWT secret: env var > persisted file > generate new.
+ * Persists auto-generated secrets to .siclaw/jwt-secret.key so they survive restarts.
+ */
+async function resolveJwtSecret(): Promise<string> {
+  if (process.env.SICLAW_JWT_SECRET) {
+    return process.env.SICLAW_JWT_SECRET;
+  }
+
+  const secretPath = path.join(".siclaw", "jwt-secret.key");
+  try {
+    const existing = fs.readFileSync(secretPath, "utf8").trim();
+    if (existing) {
+      console.log("[gateway] JWT secret loaded from .siclaw/jwt-secret.key");
+      return existing;
+    }
+  } catch {
+    // File doesn't exist — generate a new secret
+  }
+
+  const { randomBytes } = await import("node:crypto");
+  const generated = randomBytes(32).toString("hex");
+  fs.mkdirSync(".siclaw", { recursive: true });
+  fs.writeFileSync(secretPath, generated, { mode: 0o600 });
+  console.log("[gateway] Generated new JWT secret → .siclaw/jwt-secret.key");
+  return generated;
 }
 
 /**
