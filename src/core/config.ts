@@ -136,6 +136,12 @@ export function loadConfig(): SiclawConfig {
   }
 
   cached = deepMerge(DEFAULTS as unknown as Record<string, unknown>, fileConfig) as unknown as SiclawConfig;
+
+  // Environment variable overrides (used by process-spawner to assign unique ports)
+  if (process.env.SICLAW_AGENTBOX_PORT) {
+    cached.server.port = parseInt(process.env.SICLAW_AGENTBOX_PORT, 10);
+  }
+
   return cached;
 }
 
