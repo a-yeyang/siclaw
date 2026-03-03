@@ -109,6 +109,21 @@ function resolveEmbeddingConfig(): MemoryIndexerOpts | undefined {
 }
 
 /**
+ * Truncate content to a character budget using 70% head + 20% tail strategy.
+ * The remaining 10% is reserved for the truncation marker.
+ */
+function truncateWithBudget(content: string, maxChars: number): string {
+  if (content.length <= maxChars) return content;
+  const headSize = Math.floor(maxChars * 0.7);
+  const tailSize = Math.floor(maxChars * 0.2);
+  return (
+    content.slice(0, headSize) +
+    "\n\n[...truncated — use memory_search to find older entries...]\n\n" +
+    content.slice(-tailSize)
+  );
+}
+
+/**
  * Build the append system prompt content (skills index + MEMORY.md).
  * Shared between pi-agent (via DefaultResourceLoader) and SDK brain.
  */
@@ -215,8 +230,9 @@ function buildAppendSystemPrompt(
   // Load PROFILE.md (user profile for personalized interactions)
   const profileFile = path.join(memoryDir, "PROFILE.md");
   if (fs.existsSync(profileFile)) {
-    const profileContent = fs.readFileSync(profileFile, "utf-8").trim();
+    let profileContent = fs.readFileSync(profileFile, "utf-8").trim();
     if (profileContent) {
+      profileContent = truncateWithBudget(profileContent, 5_000);
       parts.push(`\n## User Profile\n\n${profileContent}`);
     }
   } else {
@@ -244,8 +260,9 @@ This file controls whether the onboarding flow is shown. If you do not write it,
 
   const memoryFile = path.join(memoryDir, "MEMORY.md");
   if (fs.existsSync(memoryFile)) {
-    const content = fs.readFileSync(memoryFile, "utf-8").trim();
+    let content = fs.readFileSync(memoryFile, "utf-8").trim();
     if (content) {
+      content = truncateWithBudget(content, 20_000);
       parts.push(`\n## MEMORY.md\n\n${content}`);
     }
   }

@@ -11,8 +11,8 @@ import type { EmbeddingProvider, MemoryChunk, MemorySearchResult } from "./types
 import { applyTemporalDecay, type TemporalDecayConfig } from "./temporal-decay.js";
 import { mmrRerank, type MMRConfig } from "./mmr.js";
 
-const DEFAULT_VECTOR_WEIGHT = 0.85;
-const DEFAULT_FTS_WEIGHT = 0.15;
+const DEFAULT_VECTOR_WEIGHT = 0.70;
+const DEFAULT_FTS_WEIGHT = 0.30;
 const DEFAULT_MIN_SCORE = 0.35;
 
 export interface MemorySearchConfig {

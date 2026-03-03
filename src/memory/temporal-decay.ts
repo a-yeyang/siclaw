@@ -12,7 +12,7 @@ export interface TemporalDecayConfig {
 }
 
 export const DEFAULT_TEMPORAL_DECAY: TemporalDecayConfig = {
-  enabled: false,
+  enabled: true,
   halfLifeDays: 30,
 };
 
