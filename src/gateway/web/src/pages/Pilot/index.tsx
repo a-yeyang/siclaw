@@ -205,6 +205,7 @@ export function PilotPage() {
                         onExitDp={pilot.exitDpMode}
                         systemStatus={pilot.systemStatus}
                         onNavigateModels={() => navigate('/models')}
+                        onNavigateCredentials={() => navigate('/credentials')}
                     />
                 </div>
             </div>

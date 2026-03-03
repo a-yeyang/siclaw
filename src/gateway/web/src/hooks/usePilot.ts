@@ -76,12 +76,7 @@ export interface SystemStatus {
     hasModels: boolean;
     hasProfile: boolean;
     sessionCount: number;
-    env: {
-        kubectl: boolean;
-        kubectlContext: string | null;
-        kubectlContexts: string[];
-        tools: string[];
-    };
+    credentials: Record<string, number>;
 }
 
 /** Reduce individual progress events into accumulated investigation state */

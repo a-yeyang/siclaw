@@ -1,10 +1,11 @@
-import { BookOpen, SearchCode, Cpu, Timer, Terminal, AlertTriangle, ArrowRight } from 'lucide-react';
+import { BookOpen, SearchCode, Cpu, Timer, CheckCircle2, Circle, ArrowRight, KeyRound } from 'lucide-react';
 import type { SystemStatus } from '@/hooks/usePilot';
 
 export interface WelcomeAreaProps {
     systemStatus: SystemStatus | null;
     onSendPrompt: (text: string) => void;
     onNavigateModels: () => void;
+    onNavigateCredentials: () => void;
 }
 
 const CAPABILITIES = [
@@ -40,10 +41,22 @@ const SUGGESTED_PROMPTS = [
 /** Extra onboarding prompt shown only for first-time users (no PROFILE.md) */
 const ONBOARDING_PROMPT = 'Introduce yourself and help me get started';
 
-export function WelcomeArea({ systemStatus, onSendPrompt, onNavigateModels }: WelcomeAreaProps) {
+const CREDENTIAL_LABELS: Record<string, string> = {
+    kubeconfig: 'Kubeconfig',
+    ssh_password: 'SSH',
+    ssh_key: 'SSH Key',
+    api_token: 'API Token',
+    api_basic_auth: 'API Auth',
+};
+
+export function WelcomeArea({ systemStatus, onSendPrompt, onNavigateModels, onNavigateCredentials }: WelcomeAreaProps) {
     const isFirstTime = systemStatus?.hasProfile === false;
     const hasModels = systemStatus?.hasModels ?? false;
-    const env = systemStatus?.env;
+    const credentials = systemStatus?.credentials ?? {};
+    const hasCredentials = Object.keys(credentials).length > 0;
+    const sessionCount = systemStatus?.sessionCount ?? 0;
+
+    const allChecklistDone = hasModels && hasCredentials && sessionCount > 0;
 
     const handlePromptClick = (text: string) => {
         if (!hasModels) {
@@ -67,21 +80,36 @@ export function WelcomeArea({ systemStatus, onSendPrompt, onNavigateModels }: We
                         </p>
                     </div>
 
-                    {/* Model Setup Card */}
-                    {systemStatus && !hasModels && (
-                        <button
-                            onClick={onNavigateModels}
-                            className="w-full bg-white border-2 border-amber-300 rounded-2xl shadow-sm p-5 flex items-center justify-between hover:border-amber-400 transition-colors group"
-                        >
-                            <div className="flex items-center gap-3">
-                                <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0" />
-                                <div className="text-left">
-                                    <p className="text-sm font-medium text-gray-800">Configure your first AI model</p>
-                                    <p className="text-xs text-gray-500 mt-0.5">Add a model provider to start chatting</p>
-                                </div>
+                    {/* Setup Checklist — replaces old model warning + env card */}
+                    {systemStatus && !allChecklistDone && (
+                        <div className="w-full bg-white border border-gray-200 rounded-2xl shadow-sm p-5 space-y-3">
+                            <h2 className="text-sm font-semibold text-gray-700">Getting Started</h2>
+                            <div className="space-y-2">
+                                {/* Step 1: Configure AI Model */}
+                                <ChecklistStep
+                                    step={1}
+                                    done={hasModels}
+                                    label="Configure AI Model"
+                                    subtitle="Add a model provider to start chatting"
+                                    onClick={onNavigateModels}
+                                />
+                                {/* Step 2: Add Credentials */}
+                                <ChecklistStep
+                                    step={2}
+                                    done={hasCredentials}
+                                    label="Add Credentials"
+                                    subtitle="Connect to your clusters and servers via SSH or Kubeconfig"
+                                    onClick={onNavigateCredentials}
+                                />
+                                {/* Step 3: Start a conversation */}
+                                <ChecklistStep
+                                    step={3}
+                                    done={sessionCount > 0}
+                                    label="Start your first conversation"
+                                    subtitle="Ask Siclaw to diagnose an issue or run a skill"
+                                />
                             </div>
-                            <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-gray-600 transition-colors" />
-                        </button>
+                        </div>
                     )}
 
                     {/* Capability Grid */}
@@ -98,31 +126,16 @@ export function WelcomeArea({ systemStatus, onSendPrompt, onNavigateModels }: We
                         ))}
                     </div>
 
-                    {/* Environment Card */}
-                    {env && (env.kubectl || env.tools.length > 0) && (
-                        <div className="w-full bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
-                            <div className="flex items-center gap-2 mb-3">
-                                <Terminal className="w-4 h-4 text-gray-400" />
-                                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Environment</span>
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                                {env.kubectlContext && (
-                                    <span className="inline-flex items-center text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-2.5 py-1">
-                                        kubectl: {env.kubectlContext}
-                                    </span>
-                                )}
-                                {env.tools.map((tool) => (
-                                    <span
-                                        key={tool}
-                                        className="inline-flex items-center text-xs bg-gray-50 text-gray-600 border border-gray-200 rounded-full px-2.5 py-1"
-                                    >
-                                        {tool}
-                                    </span>
-                                ))}
-                            </div>
-                        </div>
+                    {/* Credentials Summary — shown when checklist is all done */}
+                    {allChecklistDone && hasCredentials && (
+                        <CredentialsSummary credentials={credentials} />
                     )}
                 </>
+            )}
+
+            {/* ── Returning user: Credentials summary (if any) ── */}
+            {!isFirstTime && hasCredentials && (
+                <CredentialsSummary credentials={credentials} />
             )}
 
             {/* ── Suggested Prompts: shown on every empty session ── */}
@@ -156,6 +169,74 @@ export function WelcomeArea({ systemStatus, onSendPrompt, onNavigateModels }: We
                     )}
                 </div>
             )}
+        </div>
+    );
+}
+
+/* ── Subcomponents ── */
+
+function ChecklistStep({ step, done, label, subtitle, onClick }: {
+    step: number;
+    done: boolean;
+    label: string;
+    subtitle: string;
+    onClick?: () => void;
+}) {
+    const content = (
+        <div className="flex items-start gap-3">
+            {done ? (
+                <CheckCircle2 className="w-5 h-5 text-green-500 mt-0.5 shrink-0" />
+            ) : (
+                <Circle className="w-5 h-5 text-gray-300 mt-0.5 shrink-0" />
+            )}
+            <div className="min-w-0">
+                <p className={`text-sm font-medium ${done ? 'text-gray-400' : 'text-gray-800'}`}>
+                    {step}. {label}
+                </p>
+                <p className={`text-xs mt-0.5 ${done ? 'text-gray-300' : 'text-gray-500'}`}>
+                    {subtitle}
+                </p>
+            </div>
+            {!done && onClick && (
+                <ArrowRight className="w-4 h-4 text-gray-400 mt-0.5 ml-auto shrink-0" />
+            )}
+        </div>
+    );
+
+    if (onClick) {
+        return (
+            <button
+                onClick={onClick}
+                className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-gray-50 transition-colors"
+            >
+                {content}
+            </button>
+        );
+    }
+
+    return <div className="px-3 py-2.5">{content}</div>;
+}
+
+function CredentialsSummary({ credentials }: { credentials: Record<string, number> }) {
+    const entries = Object.entries(credentials);
+    if (entries.length === 0) return null;
+
+    return (
+        <div className="w-full bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
+            <div className="flex items-center gap-2 mb-3">
+                <KeyRound className="w-4 h-4 text-gray-400" />
+                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Credentials</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+                {entries.map(([type, count]) => (
+                    <span
+                        key={type}
+                        className="inline-flex items-center text-xs bg-gray-50 text-gray-600 border border-gray-200 rounded-full px-2.5 py-1"
+                    >
+                        {CREDENTIAL_LABELS[type] || type} &times;{count}
+                    </span>
+                ))}
+            </div>
         </div>
     );
 }
