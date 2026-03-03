@@ -25,7 +25,7 @@ Use this tool (NOT create_skill) when the user asks to modify, update, change, o
 **IMPORTANT — Identify the target skill FIRST**:
 Before calling this tool, you MUST know the exact name of the skill to update. Check the Skill Scripts Reference in your context for existing skills. If the user's request is ambiguous (e.g. "update that skill", "update it"), ASK the user to clarify which skill they mean. Never guess — a wrong target will corrupt the wrong skill.
 
-Do NOT use read, edit, write, or bash on files under /mnt/skills/ — the filesystem is read-only. Always use this tool instead.
+Do NOT use read, edit, write, or bash on files under .siclaw/skills/ — the filesystem is read-only. Always use this tool instead.
 
 **Approval required**: When scripts are changed, the update enters a "staged" review state and requires admin approval before the new version becomes active. The old version of the skill remains usable during review. After updating, do NOT attempt to test the new version — it will not take effect until an admin approves it. Inform the user that the update is pending review.
 

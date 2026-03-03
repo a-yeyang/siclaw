@@ -2,9 +2,9 @@
  * Skill File Writer — writes skill files to Skills PV
  *
  * Directory layout:
- *   /mnt/skills/user/{userId}/{skillName}/SKILL.md
- *   /mnt/skills/team/{skillName}/SKILL.md
- *   /mnt/skills/core/{skillName}/SKILL.md
+ *   .siclaw/skills/user/{userId}/{skillName}/SKILL.md
+ *   .siclaw/skills/team/{skillName}/SKILL.md
+ *   .siclaw/skills/core/{skillName}/SKILL.md
  */
 
 import fs from "node:fs";

@@ -49,7 +49,7 @@ COPY --from=builder /app/src/gateway/web/dist/ ./dist/gateway/web/dist/
 COPY skills/core/ ./skills/core/
 
 # Extension skills directory (populated by overlay builds)
-RUN mkdir -p ./skills/extension
+RUN mkdir -p ./.siclaw/skills/extension ./skills/extension
 
 # Copy MCP servers config if present (optional — DB is primary source)
 COPY config/mcp-servers.jso[n] ./config/

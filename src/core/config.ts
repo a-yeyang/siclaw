@@ -66,7 +66,7 @@ const DEFAULTS: SiclawConfig = {
   providers: {},
   paths: {
     userDataDir: ".siclaw/user-data",
-    skillsDir: "skills",
+    skillsDir: ".siclaw/skills",
     credentialsDir: ".siclaw/credentials",
   },
   server: { port: 3000, gatewayUrl: "" },

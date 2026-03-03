@@ -99,12 +99,10 @@ export class K8sSpawner implements BoxSpawner {
     const env: k8s.V1EnvVar[] = [
       { name: "USER_ID", value: boxConfig.userId },
       { name: "SICLAW_AGENTBOX_PORT", value: "3000" },
-      { name: "PI_CODING_AGENT_DIR", value: "/mnt/user-data/agent" },
-      { name: "SICLAW_SKILLS_DIR", value: "/mnt/skills" },
-      { name: "SICLAW_MCP_DIR", value: "/mnt/mcp" },
-      { name: "SICLAW_USER_DATA_DIR", value: "/mnt/user-data" },
+      { name: "PI_CODING_AGENT_DIR", value: ".siclaw/user-data/agent" },
+      { name: "SICLAW_SKILLS_DIR", value: ".siclaw/skills" },
+      { name: "SICLAW_USER_DATA_DIR", value: ".siclaw/user-data" },
       { name: "SICLAW_GATEWAY_URL", value: "http://siclaw-gateway.siclaw.svc.cluster.local" },
-      { name: "SICLAW_CREDENTIALS_DIR", value: "/home/agentbox/.credentials" },
     ];
 
     // Pass workspace allowed tools
@@ -150,50 +148,26 @@ export class K8sSpawner implements BoxSpawner {
             volumeMounts: [
               {
                 name: "skills-pv",
-                mountPath: "/mnt/skills/core",
+                mountPath: "/app/.siclaw/skills/core",
                 subPath: "core",
                 readOnly: true,
               },
               {
                 name: "skills-pv",
-                mountPath: "/mnt/skills/team",
+                mountPath: "/app/.siclaw/skills/team",
                 subPath: "team",
                 readOnly: true,
               },
               {
                 name: "skills-pv",
-                mountPath: "/mnt/skills/user",
+                mountPath: "/app/.siclaw/skills/user",
                 subPath: `user/${userId}/.ws-${workspaceId}`,
                 readOnly: true,
               },
               {
                 name: "skills-pv",
-                mountPath: "/mnt/user-data",
+                mountPath: "/app/.siclaw/user-data",
                 subPath: `user/${userId}/agent-data`,
-              },
-              {
-                name: "skills-pv",
-                mountPath: "/home/agentbox/.credentials",
-                subPath: `user/${userId}/.ws-${workspaceId}/.credentials`,
-                readOnly: true,
-              },
-              {
-                name: "skills-pv",
-                mountPath: "/mnt/mcp",
-                subPath: "mcp",
-                readOnly: true,
-              },
-              {
-                name: "skills-pv",
-                mountPath: "/home/agentbox/.kube/envs",
-                subPath: `user/${userId}/.kube/envs`,
-                readOnly: true,
-              },
-              {
-                name: "skills-pv",
-                mountPath: "/home/agentbox/.kube/defaults",
-                subPath: "_default_kubeconfigs",
-                readOnly: true,
               },
             ],
             resources: {

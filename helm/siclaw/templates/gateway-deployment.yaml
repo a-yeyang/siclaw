@@ -38,7 +38,7 @@ spec:
             - name: SICLAW_AGENTBOX_IMAGE
               value: {{ include "siclaw.agentboxImage" . }}
             - name: SICLAW_SKILLS_DIR
-              value: "/mnt/skills"
+              value: ".siclaw/skills"
             - name: SICLAW_CRON_SERVICE_URL
               value: "http://{{ include "siclaw.fullname" . }}-cron.{{ .Values.namespace }}.svc.cluster.local"
             {{- if .Values.database.existingSecret.name }}
@@ -62,7 +62,7 @@ spec:
             {{- toYaml .Values.gateway.resources | nindent 12 }}
           volumeMounts:
             - name: skills
-              mountPath: /mnt/skills
+              mountPath: /app/.siclaw/skills
           livenessProbe:
             httpGet:
               path: /api/health

@@ -45,7 +45,7 @@ import { PiAgentBrain } from "./brains/pi-agent-brain.js";
 import { ClaudeSdkBrain } from "./brains/claude-sdk-brain.js";
 import type { BrainSession, BrainType } from "./brain-session.js";
 import { hasOpenAIProvider, ensureProxy } from "./llm-proxy.js";
-import { McpClientManager, loadMcpServersConfig } from "./mcp-client.js";
+import { McpClientManager } from "./mcp-client.js";
 import { loadConfig, getEmbeddingConfig, getConfigPath } from "./config.js";
 
 export type SessionMode = "web" | "channel" | "cli";
@@ -400,7 +400,7 @@ export async function createSiclawSession(
       cwd,
       customTools: sdkTools,
       proxyUrl,
-      externalMcpServers: mcpConfig?.mcpServers && Object.keys(mcpConfig.mcpServers).length > 0 ? mcpConfig.mcpServers : undefined,
+      externalMcpServers: mcpServers && Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
       dpState,
     });
 
