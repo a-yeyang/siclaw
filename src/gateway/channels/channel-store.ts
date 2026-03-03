@@ -11,7 +11,7 @@ import type { Database } from "../db/index.js";
 import { channels } from "../db/schema.js";
 
 export interface ChannelRecord {
-  id: string; // 'feishu' | 'dingtalk' | 'discord' | 'slack' | 'email'
+  id: string; // 'lark' | 'discord' | 'telegram' | 'slack' | 'whatsapp'
   enabled: boolean;
   config: Record<string, unknown>; // channel-specific fields
   status: "connected" | "disconnected" | "error";

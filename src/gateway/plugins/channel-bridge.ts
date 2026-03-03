@@ -104,7 +104,7 @@ export function createChannelBridge(
 
       // Check if sender is bound to a platform user
       const boundUser = userStore?.getByBinding(
-        channelId as "feishu" | "dingtalk" | "discord",
+        channelId,
         senderId,
       );
 

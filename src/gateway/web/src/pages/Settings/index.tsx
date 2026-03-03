@@ -4,30 +4,19 @@ import {
     LogOut,
     ChevronRight,
     Search,
-    Link,
-    Unlink,
     Hash,
     KeyRound,
     Loader2,
 } from 'lucide-react';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { getUser, updateUser, rpcUpdateProfile } from './userData';
 import { logout, getCurrentUser } from '../../auth';
 import { EditProfileDialog } from '../../components/EditProfileDialog';
-import { BindChannelDialog } from '../../components/BindChannelDialog';
-import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { useWebSocket } from '../../hooks/useWebSocket';
-
-const CHANNELS = [
-    { id: 'feishu' as const, label: 'Feishu' },
-];
 
 export function SettingsPage() {
     const [user, setUser] = useState(getUser());
     const [isEditOpen, setIsEditOpen] = useState(false);
-    const [bindChannel, setBindChannel] = useState<string | null>(null);
-    const [unbindChannel, setUnbindChannel] = useState<string | null>(null);
-    const [bindings, setBindings] = useState<Record<string, string>>({});
     const { sendRpc, isConnected } = useWebSocket();
     const authUser = getCurrentUser();
     const [isSsoUser, setIsSsoUser] = useState(true); // default true to hide form until loaded
@@ -49,24 +38,6 @@ export function SettingsPage() {
         return () => window.removeEventListener('user-profile-updated', handleUpdate);
     }, []);
 
-    const loadBindings = useCallback(async () => {
-        if (!isConnected) return;
-        try {
-            const result = await sendRpc('binding.list') as { bindings?: Record<string, string> };
-            setBindings(result.bindings ?? {});
-        } catch {
-            // ignore
-        }
-    }, [sendRpc, isConnected]);
-
-    const hasLoadedBindingsRef = useRef(false);
-    useEffect(() => {
-        if (!hasLoadedBindingsRef.current) {
-            hasLoadedBindingsRef.current = true;
-            loadBindings();
-        }
-    }, [loadBindings]);
-
     const handleSaveProfile = async (updates: any) => {
         updateUser(updates);
         try {
@@ -76,27 +47,6 @@ export function SettingsPage() {
         }
     };
 
-    const handleUnbind = async () => {
-        if (!unbindChannel) return;
-        try {
-            await sendRpc('binding.remove', { channel: unbindChannel });
-            setBindings((prev) => {
-                const next = { ...prev };
-                delete next[unbindChannel];
-                return next;
-            });
-        } catch {
-            // ignore
-        }
-        setUnbindChannel(null);
-    };
-
-    const handleBindClose = () => {
-        setBindChannel(null);
-        // Refresh bindings in case binding was done via the channel
-        loadBindings();
-    };
-
     return (
         <div className="h-full bg-white flex flex-col">
             <EditProfileDialog
@@ -104,21 +54,6 @@ export function SettingsPage() {
                 onClose={() => setIsEditOpen(false)}
                 user={user}
                 onSave={handleSaveProfile}
-            />
-            <BindChannelDialog
-                isOpen={!!bindChannel}
-                onClose={handleBindClose}
-                channel={bindChannel ?? ''}
-                sendRpc={sendRpc}
-            />
-            <ConfirmDialog
-                isOpen={!!unbindChannel}
-                onClose={() => setUnbindChannel(null)}
-                onConfirm={handleUnbind}
-                title="Unbind Channel"
-                description={`Are you sure you want to unbind ${CHANNELS.find((c) => c.id === unbindChannel)?.label ?? unbindChannel}? Messages from this channel will no longer be routed to your account.`}
-                confirmText="Unbind"
-                variant="danger"
             />
 
             {/* Header */}
@@ -160,50 +95,6 @@ export function SettingsPage() {
                         >
                             Edit Profile
                         </button>
-                    </div>
-
-                    {/* Settings Group: Channel Bindings */}
-                    <div className="space-y-3">
-                        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-1">Channel Bindings</h3>
-                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden divide-y divide-gray-100">
-                            {CHANNELS.map(({ id, label }) => {
-                                const bound = !!bindings[id];
-                                return (
-                                    <div
-                                        key={id}
-                                        className="flex items-center justify-between p-4"
-                                    >
-                                        <div className="flex items-center gap-4">
-                                            <div className={bound ? 'text-green-500' : 'text-gray-400'}>
-                                                <Link className="w-5 h-5" />
-                                            </div>
-                                            <span className="text-sm font-medium text-gray-700">{label}</span>
-                                        </div>
-                                        <div className="flex items-center gap-3">
-                                            {bound ? (
-                                                <>
-                                                    <span className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full font-medium">Bound</span>
-                                                    <button
-                                                        onClick={() => setUnbindChannel(id)}
-                                                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                                        title="Unbind"
-                                                    >
-                                                        <Unlink className="w-4 h-4" />
-                                                    </button>
-                                                </>
-                                            ) : (
-                                                <button
-                                                    onClick={() => setBindChannel(id)}
-                                                    className="px-3 py-1 text-xs font-medium text-primary-600 bg-primary-50 rounded-lg hover:bg-primary-100 transition-colors"
-                                                >
-                                                    Bind
-                                                </button>
-                                            )}
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
                     </div>
 
                     {/* Settings Group: Preferences */}

@@ -45,12 +45,12 @@ export function createPluginRuntime(
     channel: {
       reply: {
         dispatchReplyWithBufferedBlockDispatcher(...args: unknown[]) {
-          // The feishu plugin calls this to dispatch inbound messages.
+          // The channel plugin calls this to dispatch inbound messages.
           // We intercept and route to our session manager.
           // args vary by plugin — extract what we can.
           if (handler) {
             const ctx = args[0] as Record<string, unknown> | undefined;
-            const channelId = String(ctx?.channelId ?? ctx?.channel ?? "feishu");
+            const channelId = String(ctx?.channelId ?? ctx?.channel ?? "lark");
             const chatId = String(ctx?.chatId ?? ctx?.chat_id ?? ctx?.conversationId ?? "unknown");
             const senderId = String(ctx?.senderId ?? ctx?.sender_id ?? ctx?.userId ?? "unknown");
             const text = String(ctx?.text ?? ctx?.content ?? ctx?.message ?? "");

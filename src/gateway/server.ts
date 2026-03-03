@@ -193,27 +193,6 @@ export async function startGateway(opts: StartGatewayOptions): Promise<GatewaySe
     console.log(`[gateway] SSO enabled: issuer=${oauth2Config.issuer} clientId=${oauth2Config.clientId}`);
   }
 
-  // Binding RPC methods
-  rpcMethods.set("binding.list", async (_params, ctx) => {
-    if (!ctx?.auth?.userId) throw new Error("Unauthorized");
-    const user = userStore.getById(ctx.auth.userId);
-    return { bindings: user?.bindings ?? {} };
-  });
-
-  rpcMethods.set("binding.generate", async (_params, ctx) => {
-    if (!ctx?.auth?.userId) throw new Error("Unauthorized");
-    const code = bindCodeStore.generateCode(ctx.auth.userId);
-    return { code, expiresIn: 300 };
-  });
-
-  rpcMethods.set("binding.remove", async (params, ctx) => {
-    if (!ctx?.auth?.userId) throw new Error("Unauthorized");
-    const { channel } = params as { channel: "feishu" | "dingtalk" | "discord" };
-    if (!channel) throw new Error("channel is required");
-    userStore.removeBinding(ctx.auth.userId, channel);
-    return { ok: true };
-  });
-
   // Permission management RPCs (admin only)
   const permRepo = db ? new PermissionRepository(db) : null;
   const permUserRepo = db ? new UserRepository(db) : null;

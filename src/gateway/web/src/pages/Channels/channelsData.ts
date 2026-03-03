@@ -1,23 +1,35 @@
-import { MessageCircle, Terminal } from 'lucide-react';
+import { MessageCircle, Terminal, Hash, MessageSquare, Phone } from 'lucide-react';
 
-export type ChannelType = 'feishu' | 'dingtalk';
+export type ChannelType = 'lark' | 'telegram' | 'slack' | 'discord' | 'whatsapp';
 
 export interface BaseConfig {
     enabled: boolean;
 }
 
-export interface FeishuConfig extends BaseConfig {
-    domain: 'feishu' | 'lark';
+export interface LarkConfig extends BaseConfig {
     appId: string;
     appSecret: string;
 }
 
-export interface DingTalkConfig extends BaseConfig {
-    clientId: string;
-    clientSecret: string;
+export interface TelegramConfig extends BaseConfig {
+    botToken: string;
 }
 
-export type ChannelConfig = FeishuConfig | DingTalkConfig;
+export interface SlackConfig extends BaseConfig {
+    botToken: string;
+    appToken: string;
+}
+
+export interface DiscordConfig extends BaseConfig {
+    token: string;
+}
+
+export interface WhatsAppConfig extends BaseConfig {
+    accessToken: string;
+    phoneNumberId: string;
+}
+
+export type ChannelConfig = LarkConfig | TelegramConfig | SlackConfig | DiscordConfig | WhatsAppConfig;
 
 export interface ChannelView {
     id: ChannelType;
@@ -42,16 +54,37 @@ export interface Channel {
 /** Static channel metadata (icon, name, description) */
 export const CHANNEL_META: Omit<Channel, 'status' | 'config' | 'enabled' | 'error'>[] = [
     {
-        id: 'feishu',
-        name: 'Feishu / Lark',
-        description: 'Enterprise bot for Feishu with interactive cards and approval flows.',
+        id: 'lark',
+        name: 'Lark',
+        description: 'Enterprise bot for Lark with interactive cards and approval flows.',
         icon: MessageCircle,
     },
     {
-        id: 'dingtalk',
-        name: 'DingTalk',
-        description: 'Push notifications and basic command support for DingTalk groups.',
+        id: 'telegram',
+        name: 'Telegram',
+        description: 'Bot integration for Telegram groups and direct messages.',
+        icon: MessageSquare,
+        comingSoon: true,
+    },
+    {
+        id: 'slack',
+        name: 'Slack',
+        description: 'Slack workspace bot with rich message formatting and threads.',
+        icon: Hash,
+        comingSoon: true,
+    },
+    {
+        id: 'discord',
+        name: 'Discord',
+        description: 'Discord server bot with slash commands and channel messaging.',
         icon: Terminal,
+        comingSoon: true,
+    },
+    {
+        id: 'whatsapp',
+        name: 'WhatsApp',
+        description: 'WhatsApp Business API integration for customer messaging.',
+        icon: Phone,
         comingSoon: true,
     },
 ];

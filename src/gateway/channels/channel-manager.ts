@@ -10,8 +10,7 @@ import type { GatewayConfig } from "../config.js";
 import type { ChannelStore } from "./channel-store.js";
 import type { UserStore } from "../auth/user-store.js";
 import type { BindCodeStore } from "../auth/bind-code-store.js";
-import { createFeishuChannel } from "./feishu.js";
-import { createDingTalkChannel } from "./dingtalk.js";
+import { createLarkChannel } from "./lark.js";
 import { createDiscordChannel } from "./discord.js";
 
 export interface ChannelDeps {
@@ -26,8 +25,7 @@ type ChannelFactory = (
 ) => ChannelPlugin;
 
 const FACTORIES: Record<string, ChannelFactory> = {
-  feishu: createFeishuChannel,
-  dingtalk: createDingTalkChannel,
+  lark: createLarkChannel,
   discord: createDiscordChannel,
 };
 

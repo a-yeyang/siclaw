@@ -17,30 +17,23 @@ import type {
 import type { GatewayConfig, ChannelConfig } from "../config.js";
 import type { ChannelDeps } from "./channel-manager.js";
 import { splitMessage } from "./utils.js";
-import { containsMarkdown, markdownToFeishuPost } from "./feishu-format.js";
+import { containsMarkdown, markdownToLarkPost } from "./lark-format.js";
 
 // ─── CardKit Streaming API helpers ──────────────────────────
 
-const FEISHU_API = "https://open.feishu.cn/open-apis";
 const LARK_API = "https://open.larksuite.com/open-apis";
 
-function resolveApiBase(domain?: "feishu" | "lark"): string {
-  return domain === "lark" ? LARK_API : FEISHU_API;
-}
-
-/** Token cache keyed by domain|appId */
+/** Token cache keyed by appId */
 const tokenCache = new Map<string, { token: string; expiresAt: number }>();
 
 async function getTenantAccessToken(
   appId: string,
   appSecret: string,
-  domain?: "feishu" | "lark",
 ): Promise<string> {
-  const key = `${domain ?? "feishu"}|${appId}`;
-  const cached = tokenCache.get(key);
+  const cached = tokenCache.get(appId);
   if (cached && cached.expiresAt > Date.now() + 60_000) return cached.token;
 
-  const resp = await fetch(`${resolveApiBase(domain)}/auth/v3/tenant_access_token/internal`, {
+  const resp = await fetch(`${LARK_API}/auth/v3/tenant_access_token/internal`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ app_id: appId, app_secret: appSecret }),
@@ -54,7 +47,7 @@ async function getTenantAccessToken(
   if (r.code !== 0 || !r.tenant_access_token) {
     throw new Error(`Failed to get tenant access token: ${r.msg}`);
   }
-  tokenCache.set(key, {
+  tokenCache.set(appId, {
     token: r.tenant_access_token,
     expiresAt: Date.now() + (r.expire ?? 7200) * 1000,
   });
@@ -70,43 +63,39 @@ function resolveReceiveIdType(id: string): "open_id" | "union_id" | "chat_id" {
 
 // ─────────────────────────────────────────────────────────────
 
-interface FeishuConfig extends ChannelConfig {
+interface LarkConfig extends ChannelConfig {
   appId: string;
   appSecret: string;
-  domain?: "feishu" | "lark";
 }
 
-export function createFeishuChannel(
+export function createLarkChannel(
   config: GatewayConfig,
   channelBridge: ChannelBridge,
   deps?: ChannelDeps,
 ): ChannelPlugin {
-  const feishuConfig = config.channels.feishu as FeishuConfig | undefined;
+  const larkConfig = config.channels.lark as LarkConfig | undefined;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let apiClient: any = null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let wsClient: any = null;
 
   const plugin: ChannelPlugin = {
-    name: "feishu",
+    name: "lark",
 
     gateway: {
       async startAccount() {
-        if (!feishuConfig?.enabled || !feishuConfig?.appId || !feishuConfig?.appSecret) {
-          console.log("[feishu] Channel disabled or missing appId/appSecret");
+        if (!larkConfig?.enabled || !larkConfig?.appId || !larkConfig?.appSecret) {
+          console.log("[lark] Channel disabled or missing appId/appSecret");
           return;
         }
 
         try {
           const lark = await import("@larksuiteoapi/node-sdk");
 
-          const domain =
-            feishuConfig.domain === "lark" ? lark.Domain.Lark : lark.Domain.Feishu;
-
           apiClient = new lark.Client({
-            appId: feishuConfig.appId,
-            appSecret: feishuConfig.appSecret,
-            domain,
+            appId: larkConfig.appId,
+            appSecret: larkConfig.appSecret,
+            domain: lark.Domain.Lark,
           });
 
           // Get bot info for mention detection in groups
@@ -117,9 +106,9 @@ export function createFeishuChannel(
               url: "/open-apis/bot/v3/info",
             });
             botOpenId = botInfo?.bot?.open_id ?? botInfo?.data?.bot?.open_id;
-            console.log(`[feishu] Bot open_id: ${botOpenId}`);
+            console.log(`[lark] Bot open_id: ${botOpenId}`);
           } catch (err) {
-            console.warn("[feishu] Could not fetch bot info:", err);
+            console.warn("[lark] Could not fetch bot info:", err);
           }
 
           const eventDispatcher = new lark.EventDispatcher({});
@@ -145,7 +134,7 @@ export function createFeishuChannel(
                 } else if (typeof resp.data.arrayBuffer === "function") {
                   buffer = Buffer.from(await resp.data.arrayBuffer());
                 } else {
-                  console.warn("[feishu] Unknown media data type");
+                  console.warn("[lark] Unknown media data type");
                   return null;
                 }
 
@@ -161,12 +150,12 @@ export function createFeishuChannel(
                 };
               }
             } catch (err) {
-              console.error(`[feishu] Failed to download ${type}:`, err);
+              console.error(`[lark] Failed to download ${type}:`, err);
             }
             return null;
           }
 
-          // Dedup: Feishu may deliver the same event multiple times
+          // Dedup: Lark may deliver the same event multiple times
           const processedMessageIds = new Set<string>();
           const MESSAGE_ID_TTL = 5 * 60 * 1000; // 5 minutes
 
@@ -189,7 +178,7 @@ export function createFeishuChannel(
                 // Deduplicate by message_id
                 if (messageId) {
                   if (processedMessageIds.has(messageId)) {
-                    console.log(`[feishu] Duplicate message ${messageId}, skipping`);
+                    console.log(`[lark] Duplicate message ${messageId}, skipping`);
                     return;
                   }
                   processedMessageIds.add(messageId);
@@ -355,7 +344,7 @@ export function createFeishuChannel(
                   }
                 } else {
                   // Unsupported message type - log and skip
-                  console.log(`[feishu] Unsupported message type: ${messageType}`);
+                  console.log(`[lark] Unsupported message type: ${messageType}`);
                   return;
                 }
 
@@ -368,7 +357,7 @@ export function createFeishuChannel(
                   const userId = deps.bindCodeStore.verifyCode(code);
                   if (userId) {
                     try {
-                      deps.userStore.addBinding(userId, "feishu", senderId);
+                      deps.userStore.addBinding(userId, "lark", senderId);
                       const user = deps.userStore.getById(userId);
                       await plugin.outbound?.sendText?.({
                         to: chatId,
@@ -418,24 +407,24 @@ export function createFeishuChannel(
                   }).catch(() => {/* ignore reaction failures */});
                 }
 
-                await channelBridge.handleInbound("feishu", chatId, senderId, text, media);
+                await channelBridge.handleInbound("lark", chatId, senderId, text, media);
               } catch (err) {
-                console.error("[feishu] Error handling message:", err);
+                console.error("[lark] Error handling message:", err);
               }
             },
           });
 
           wsClient = new lark.WSClient({
-            appId: feishuConfig.appId,
-            appSecret: feishuConfig.appSecret,
-            domain,
+            appId: larkConfig.appId,
+            appSecret: larkConfig.appSecret,
+            domain: lark.Domain.Lark,
             loggerLevel: lark.LoggerLevel.info,
           });
           await wsClient.start({ eventDispatcher });
 
-          console.log("[feishu] Channel started (WebSocket mode)");
+          console.log("[lark] Channel started (WebSocket mode)");
         } catch (err) {
-          console.error("[feishu] Failed to start:", err);
+          console.error("[lark] Failed to start:", err);
         }
       },
 
@@ -449,7 +438,7 @@ export function createFeishuChannel(
         }
         wsClient = null;
         apiClient = null;
-        console.log("[feishu] Channel stopped");
+        console.log("[lark] Channel stopped");
       },
     },
 
@@ -458,14 +447,14 @@ export function createFeishuChannel(
         if (!apiClient) return;
 
         try {
-          // Auto-convert markdown to Feishu post (rich text) format
+          // Auto-convert markdown to Lark post (rich text) format
           if (containsMarkdown(text)) {
             await (apiClient as any).im.message.create({
               params: { receive_id_type: resolveReceiveIdType(to) },
               data: {
                 receive_id: to,
                 msg_type: "post",
-                content: markdownToFeishuPost(text),
+                content: markdownToLarkPost(text),
               },
             });
             return;
@@ -486,7 +475,7 @@ export function createFeishuChannel(
             }
           }
         } catch (err) {
-          console.error(`[feishu] Failed to send to ${to}:`, err);
+          console.error(`[lark] Failed to send to ${to}:`, err);
         }
       },
 
@@ -494,14 +483,14 @@ export function createFeishuChannel(
         if (!apiClient) return;
 
         try {
-          // Auto-convert markdown to Feishu post (rich text) format
+          // Auto-convert markdown to Lark post (rich text) format
           if (containsMarkdown(text)) {
             await (apiClient as any).im.message.create({
               params: { receive_id_type: "open_id" },
               data: {
                 receive_id: userId,
                 msg_type: "post",
-                content: markdownToFeishuPost(text),
+                content: markdownToLarkPost(text),
               },
             });
             return;
@@ -522,7 +511,7 @@ export function createFeishuChannel(
             }
           }
         } catch (err) {
-          console.error(`[feishu] Failed to send direct message to ${userId}:`, err);
+          console.error(`[lark] Failed to send direct message to ${userId}:`, err);
         }
       },
 
@@ -530,8 +519,8 @@ export function createFeishuChannel(
         if (!apiClient) return;
 
         try {
-          // Feishu doesn't have native markdown message, use interactive card
-          const adapted = adaptMarkdownForFeishu(markdown.content);
+          // Lark doesn't have native markdown message, use interactive card
+          const adapted = adaptMarkdownForLark(markdown.content);
           const cardContent = {
             config: { wide_screen_mode: true },
             header: markdown.title
@@ -549,7 +538,7 @@ export function createFeishuChannel(
             },
           });
         } catch (err) {
-          console.error(`[feishu] Failed to send markdown to ${to}:`, err);
+          console.error(`[lark] Failed to send markdown to ${to}:`, err);
         }
       },
 
@@ -579,7 +568,7 @@ export function createFeishuChannel(
             },
           });
         } catch (err) {
-          console.error(`[feishu] Failed to send image to ${to}:`, err);
+          console.error(`[lark] Failed to send image to ${to}:`, err);
         }
       },
 
@@ -610,7 +599,7 @@ export function createFeishuChannel(
             },
           });
         } catch (err) {
-          console.error(`[feishu] Failed to send file to ${to}:`, err);
+          console.error(`[lark] Failed to send file to ${to}:`, err);
         }
       },
 
@@ -642,7 +631,7 @@ export function createFeishuChannel(
             },
           });
         } catch (err) {
-          console.error(`[feishu] Failed to send audio to ${to}:`, err);
+          console.error(`[lark] Failed to send audio to ${to}:`, err);
         }
       },
 
@@ -688,7 +677,7 @@ export function createFeishuChannel(
             },
           });
         } catch (err) {
-          console.error(`[feishu] Failed to send video to ${to}:`, err);
+          console.error(`[lark] Failed to send video to ${to}:`, err);
         }
       },
 
@@ -696,7 +685,7 @@ export function createFeishuChannel(
         if (!apiClient) return;
 
         try {
-          // Convert RichTextData to Feishu post format
+          // Convert RichTextData to Lark post format
           const postContent: Record<string, unknown>[][] = richText.content.map((line) =>
             line.map((elem) => {
               if (elem.tag === "text") {
@@ -728,7 +717,7 @@ export function createFeishuChannel(
             },
           });
         } catch (err) {
-          console.error(`[feishu] Failed to send rich text to ${to}:`, err);
+          console.error(`[lark] Failed to send rich text to ${to}:`, err);
         }
       },
 
@@ -737,7 +726,7 @@ export function createFeishuChannel(
 
         try {
           const elements: Record<string, unknown>[] = [
-            { tag: "markdown", content: adaptMarkdownForFeishu(card.text) },
+            { tag: "markdown", content: adaptMarkdownForLark(card.text) },
           ];
 
           // Add buttons if provided
@@ -787,20 +776,19 @@ export function createFeishuChannel(
             },
           });
         } catch (err) {
-          console.error(`[feishu] Failed to send action card to ${to}:`, err);
+          console.error(`[lark] Failed to send action card to ${to}:`, err);
         }
       },
     },
 
     streaming: {
       async createCard({ to, title }): Promise<StreamingCard> {
-        if (!apiClient || !feishuConfig?.appId || !feishuConfig?.appSecret) {
-          throw new Error("Feishu client not initialized");
+        if (!apiClient || !larkConfig?.appId || !larkConfig?.appSecret) {
+          throw new Error("Lark client not initialized");
         }
 
-        const apiBase = resolveApiBase(feishuConfig.domain);
         const token = await getTenantAccessToken(
-          feishuConfig.appId, feishuConfig.appSecret, feishuConfig.domain,
+          larkConfig.appId, larkConfig.appSecret,
         );
 
         // 1. Create CardKit card entity with streaming mode (schema 2.0)
@@ -825,7 +813,7 @@ export function createFeishuChannel(
           },
         };
 
-        const createResp = await fetch(`${apiBase}/cardkit/v1/cards`, {
+        const createResp = await fetch(`${LARK_API}/cardkit/v1/cards`, {
           method: "POST",
           headers: {
             Authorization: `Bearer ${token}`,
@@ -856,7 +844,7 @@ export function createFeishuChannel(
           throw new Error("Failed to send streaming card message");
         }
 
-        console.log(`[feishu] Streaming card created: cardId=${cr.data.card_id}, msgId=${messageId}`);
+        console.log(`[lark] Streaming card created: cardId=${cr.data.card_id}, msgId=${messageId}`);
         return {
           cardId: cr.data.card_id,
           messageId,
@@ -868,19 +856,18 @@ export function createFeishuChannel(
       },
 
       async updateCard({ card, content }): Promise<void> {
-        if (!feishuConfig?.appId || !feishuConfig?.appSecret) return;
+        if (!larkConfig?.appId || !larkConfig?.appSecret) return;
 
         const seq = ((card.sequence as number) ?? 1) + 1;
         card.sequence = seq;
 
-        const apiBase = resolveApiBase(feishuConfig.domain);
         const token = await getTenantAccessToken(
-          feishuConfig.appId, feishuConfig.appSecret, feishuConfig.domain,
+          larkConfig.appId, larkConfig.appSecret,
         );
         const elementId = (card.elementId as string) ?? "streaming_content";
 
         const resp = await fetch(
-          `${apiBase}/cardkit/v1/cards/${card.cardId}/elements/${elementId}/content`,
+          `${LARK_API}/cardkit/v1/cards/${card.cardId}/elements/${elementId}/content`,
           {
             method: "PUT",
             headers: {
@@ -897,16 +884,15 @@ export function createFeishuChannel(
 
         const r = (await resp.json()) as { code: number; msg: string };
         if (r.code !== 0) {
-          console.warn(`[feishu] Streaming update failed: ${r.msg}`);
+          console.warn(`[lark] Streaming update failed: ${r.msg}`);
         }
       },
 
       async finalizeCard({ card, content, toolOutputs }): Promise<void> {
-        if (!feishuConfig?.appId || !feishuConfig?.appSecret) return;
+        if (!larkConfig?.appId || !larkConfig?.appSecret) return;
 
-        const apiBase = resolveApiBase(feishuConfig.domain);
         const token = await getTenantAccessToken(
-          feishuConfig.appId, feishuConfig.appSecret, feishuConfig.domain,
+          larkConfig.appId, larkConfig.appSecret,
         );
         const elementId = (card.elementId as string) ?? "streaming_content";
 
@@ -916,7 +902,7 @@ export function createFeishuChannel(
 
         if (content) {
           await fetch(
-            `${apiBase}/cardkit/v1/cards/${card.cardId}/elements/${elementId}/content`,
+            `${LARK_API}/cardkit/v1/cards/${card.cardId}/elements/${elementId}/content`,
             {
               method: "PUT",
               headers: {
@@ -938,7 +924,7 @@ export function createFeishuChannel(
           ? content.replace(/\n/g, " ").trim().slice(0, 50) + (content.length > 50 ? "..." : "")
           : "";
 
-        await fetch(`${apiBase}/cardkit/v1/cards/${card.cardId}/settings`, {
+        await fetch(`${LARK_API}/cardkit/v1/cards/${card.cardId}/settings`, {
           method: "PATCH",
           headers: {
             Authorization: `Bearer ${token}`,
@@ -956,7 +942,7 @@ export function createFeishuChannel(
           }),
         });
 
-        console.log(`[feishu] Streaming card finalized: ${card.cardId}`);
+        console.log(`[lark] Streaming card finalized: ${card.cardId}`);
 
         // After streaming ends, rebuild card with collapsible panels for tool outputs
         const messageId = card.messageId as string | undefined;
@@ -1020,10 +1006,10 @@ export function createFeishuChannel(
               },
             });
 
-            console.log(`[feishu] Card rebuilt with ${toolOutputs.length} collapsible panels: ${messageId}`);
+            console.log(`[lark] Card rebuilt with ${toolOutputs.length} collapsible panels: ${messageId}`);
           } catch (err) {
             // Non-fatal: card was already finalized with flat content
-            console.error(`[feishu] Failed to rebuild card with collapsible panels:`, err);
+            console.error(`[lark] Failed to rebuild card with collapsible panels:`, err);
           }
         }
       },
@@ -1035,7 +1021,7 @@ export function createFeishuChannel(
 
 // ─── Markdown Table → List Adapter ─────────────────────────
 //
-// Feishu's card markdown renderer handles wide tables very poorly.
+// Lark's card markdown renderer handles wide tables very poorly.
 // Tables with > 3 columns are converted to a compact list format
 // where each row becomes a block with key-value pairs.
 
@@ -1050,9 +1036,9 @@ function isSeparatorRow(line: string): boolean {
   return /^\|[\s\-:]+(\|[\s\-:]+)+\|$/.test(line.trim());
 }
 
-function adaptMarkdownForFeishu(content: string): string {
-  // Phase 1: Convert unsupported markdown syntax to Feishu-compatible equivalents.
-  // Feishu card markdown only supports: **bold**, *italic*, ~~strikethrough~~, [links](url).
+function adaptMarkdownForLark(content: string): string {
+  // Phase 1: Convert unsupported markdown syntax to Lark-compatible equivalents.
+  // Lark card markdown only supports: **bold**, *italic*, ~~strikethrough~~, [links](url).
   // Convert fenced code blocks to indented plain text
   let md = content.replace(/```[\s\S]*?```/g, (block) => {
     const inner = block.replace(/^```[^\n]*\n?/, "").replace(/\n?```$/, "");
@@ -1094,7 +1080,7 @@ function adaptMarkdownForFeishu(content: string): string {
         i++;
       }
 
-      // Convert all tables to list format (Feishu markdown doesn't support table syntax)
+      // Convert all tables to list format (Lark markdown doesn't support table syntax)
       for (let r = 0; r < rows.length; r++) {
         const cells = rows[r];
         // First column as bold title

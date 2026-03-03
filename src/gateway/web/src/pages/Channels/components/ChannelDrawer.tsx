@@ -18,11 +18,7 @@ export function ChannelDrawer({ channel, isOpen, onClose, onSave }: ChannelDrawe
 
     useEffect(() => {
         if (channel) {
-            const cfg = { ...channel.config };
-            if (channel.id === 'feishu' && !cfg.domain) {
-                cfg.domain = 'feishu';
-            }
-            setConfig(cfg);
+            setConfig({ ...channel.config });
             setEnabled(channel.enabled);
         }
     }, [channel]);
@@ -103,34 +99,8 @@ export function ChannelDrawer({ channel, isOpen, onClose, onSave }: ChannelDrawe
 
                                 {/* Forms based on Type */}
                                 <div className="space-y-4">
-                                    {channel.id === 'feishu' && (
+                                    {channel.id === 'lark' && (
                                         <>
-                                            {/* Domain Selection */}
-                                            <div className="bg-gray-100 p-1 rounded-lg flex items-center mb-2">
-                                                <button
-                                                    onClick={() => setConfig({ ...config, domain: 'feishu' })}
-                                                    className={cn(
-                                                        "flex-1 py-1.5 text-sm font-medium rounded-md transition-all",
-                                                        (config.domain as string) !== 'lark'
-                                                            ? "bg-white text-gray-900 shadow-sm"
-                                                            : "text-gray-500 hover:text-gray-700"
-                                                    )}
-                                                >
-                                                    Feishu (Chinese)
-                                                </button>
-                                                <button
-                                                    onClick={() => setConfig({ ...config, domain: 'lark' })}
-                                                    className={cn(
-                                                        "flex-1 py-1.5 text-sm font-medium rounded-md transition-all",
-                                                        (config.domain as string) === 'lark'
-                                                            ? "bg-white text-gray-900 shadow-sm"
-                                                            : "text-gray-500 hover:text-gray-700"
-                                                    )}
-                                                >
-                                                    Lark (Global)
-                                                </button>
-                                            </div>
-
                                             <InputField
                                                 label="App ID"
                                                 value={(config.appId as string) || ''}
@@ -149,21 +119,64 @@ export function ChannelDrawer({ channel, isOpen, onClose, onSave }: ChannelDrawe
                                         </>
                                     )}
 
-                                    {channel.id === 'dingtalk' && (
+                                    {channel.id === 'telegram' && (
+                                        <InputField
+                                            label="Bot Token"
+                                            value={(config.botToken as string) || ''}
+                                            onChange={(v: string) => setConfig({ ...config, botToken: v })}
+                                            placeholder="123456:ABC-DEF..."
+                                            type="password"
+                                            required
+                                        />
+                                    )}
+
+                                    {channel.id === 'slack' && (
                                         <>
                                             <InputField
-                                                label="Client ID (AppKey)"
-                                                value={(config.clientId as string) || ''}
-                                                onChange={(v: string) => setConfig({ ...config, clientId: v })}
-                                                placeholder="ding..."
+                                                label="Bot Token"
+                                                value={(config.botToken as string) || ''}
+                                                onChange={(v: string) => setConfig({ ...config, botToken: v })}
+                                                placeholder="xoxb-..."
+                                                type="password"
                                                 required
                                             />
                                             <InputField
-                                                label="Client Secret (AppSecret)"
-                                                value={(config.clientSecret as string) || ''}
-                                                onChange={(v: string) => setConfig({ ...config, clientSecret: v })}
-                                                placeholder="Your app secret..."
+                                                label="App Token"
+                                                value={(config.appToken as string) || ''}
+                                                onChange={(v: string) => setConfig({ ...config, appToken: v })}
+                                                placeholder="xapp-..."
                                                 type="password"
+                                                required
+                                            />
+                                        </>
+                                    )}
+
+                                    {channel.id === 'discord' && (
+                                        <InputField
+                                            label="Bot Token"
+                                            value={(config.token as string) || ''}
+                                            onChange={(v: string) => setConfig({ ...config, token: v })}
+                                            placeholder="Your bot token..."
+                                            type="password"
+                                            required
+                                        />
+                                    )}
+
+                                    {channel.id === 'whatsapp' && (
+                                        <>
+                                            <InputField
+                                                label="Access Token"
+                                                value={(config.accessToken as string) || ''}
+                                                onChange={(v: string) => setConfig({ ...config, accessToken: v })}
+                                                placeholder="Your access token..."
+                                                type="password"
+                                                required
+                                            />
+                                            <InputField
+                                                label="Phone Number ID"
+                                                value={(config.phoneNumberId as string) || ''}
+                                                onChange={(v: string) => setConfig({ ...config, phoneNumberId: v })}
+                                                placeholder="Phone number ID..."
                                                 required
                                             />
                                         </>

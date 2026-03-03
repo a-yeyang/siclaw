@@ -14,11 +14,7 @@ export interface User {
   passwordHash: string;
   createdAt: Date;
   /** Channel bindings */
-  bindings?: {
-    feishu?: string; // open_id
-    dingtalk?: string; // staff_id
-    discord?: string; // user_id
-  };
+  bindings?: Record<string, string>;
   /** Intern flag: restricted to test environments only */
   testOnly?: boolean;
   /** SSO user flag: password changes are not supported */
@@ -216,7 +212,7 @@ export class UserStore {
    * Find a user by channel binding
    */
   getByBinding(
-    channel: "feishu" | "dingtalk" | "discord",
+    channel: string,
     channelUserId: string,
   ): User | undefined {
     for (const user of this.users.values()) {
@@ -232,7 +228,7 @@ export class UserStore {
    */
   addBinding(
     userId: string,
-    channel: "feishu" | "dingtalk" | "discord",
+    channel: string,
     channelUserId: string,
   ): void {
     const user = this.users.get(userId);
@@ -258,7 +254,7 @@ export class UserStore {
    */
   removeBinding(
     userId: string,
-    channel: "feishu" | "dingtalk" | "discord",
+    channel: string,
   ): void {
     const user = this.users.get(userId);
     if (!user) throw new Error(`User ${userId} not found`);

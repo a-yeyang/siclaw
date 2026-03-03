@@ -1,9 +1,9 @@
 /**
- * Markdown → Feishu Post format converter
+ * Markdown → Lark Post format converter
  *
  * Ported from openclaw's markdown IR system:
  *   - src/markdown/ir.ts (markdown → IR via markdown-it)
- *   - src/feishu/format.ts (IR → Feishu post elements)
+ *   - src/lark/format.ts (IR → Lark post elements)
  */
 
 import MarkdownIt from "markdown-it";
@@ -83,16 +83,16 @@ export type MarkdownParseOptions = {
   tableMode?: MarkdownTableMode;
 };
 
-// ─── Feishu Post types ──────────────────────────────────────
+// ─── Lark Post types ────────────────────────────────────────
 
-type FeishuPostElement =
+type LarkPostElement =
   | { tag: "text"; text: string; style?: string[] }
   | { tag: "a"; text: string; href: string; style?: string[] };
 
-type FeishuPostLine = FeishuPostElement[];
+type LarkPostLine = LarkPostElement[];
 
-type FeishuPostContent = {
-  zh_cn?: { title?: string; content: FeishuPostLine[] };
+type LarkPostContent = {
+  zh_cn?: { title?: string; content: LarkPostLine[] };
 };
 
 type StyleState = {
@@ -519,7 +519,7 @@ export function markdownToIR(markdown: string, options: MarkdownParseOptions = {
   };
 }
 
-// ─── IR → Feishu Post ───────────────────────────────────────
+// ─── IR → Lark Post ─────────────────────────────────────────
 
 function buildStyleRanges(styles: MarkdownStyleSpan[], textLength: number): StyleState[] {
   const ranges: StyleState[] = Array(textLength)
@@ -556,7 +556,7 @@ function stylesEqual(a: StyleState, b: StyleState): boolean {
   return a.bold === b.bold && a.italic === b.italic && a.strikethrough === b.strikethrough && a.code === b.code;
 }
 
-function createPostElement(text: string, styles: StyleState, link?: string): FeishuPostElement {
+function createPostElement(text: string, styles: StyleState, link?: string): LarkPostElement {
   const styleArray: string[] = [];
   if (styles.bold) styleArray.push("bold");
   if (styles.italic) styleArray.push("italic");
@@ -569,8 +569,8 @@ function createPostElement(text: string, styles: StyleState, link?: string): Fei
   return { tag: "text", text, ...(styleArray.length > 0 ? { style: styleArray } : {}) };
 }
 
-function renderFeishuPost(ir: MarkdownIR): FeishuPostContent {
-  const lines: FeishuPostLine[] = [];
+function renderLarkPost(ir: MarkdownIR): LarkPostContent {
+  const lines: LarkPostLine[] = [];
   const text = ir.text;
   if (!text) return { zh_cn: { content: [[{ tag: "text", text: "" }]] } };
 
@@ -581,7 +581,7 @@ function renderFeishuPost(ir: MarkdownIR): FeishuPostContent {
   let charIndex = 0;
 
   for (const line of textLines) {
-    const elems: FeishuPostElement[] = [];
+    const elems: LarkPostElement[] = [];
 
     if (line.length === 0) {
       elems.push({ tag: "text", text: "" });
@@ -636,9 +636,9 @@ export function containsMarkdown(text: string): boolean {
 }
 
 /**
- * Convert Markdown to Feishu Post format JSON string
+ * Convert Markdown to Lark Post format JSON string
  */
-export function markdownToFeishuPost(
+export function markdownToLarkPost(
   text: string,
   options?: { tableMode?: MarkdownTableMode },
 ): string {
@@ -648,6 +648,6 @@ export function markdownToFeishuPost(
     blockquotePrefix: "｜ ",
     tableMode: options?.tableMode ?? "bullets",
   });
-  const post = renderFeishuPost(ir);
+  const post = renderLarkPost(ir);
   return JSON.stringify(post);
 }
