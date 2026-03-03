@@ -196,11 +196,13 @@ export class AgentBoxSessionManager {
       fs.mkdirSync(memoryDir, { recursive: true });
     }
 
-    // continueRecent within this session's own directory — restores the
-    // correct conversation after pod restart. Falls back to create if empty.
-    const restored = SessionManager.continueRecent(sessionDir);
-    const isNewSession = !restored;
-    const frameworkSessionManager = restored ?? SessionManager.create(sessionDir);
+    // continueRecent with proper cwd + sessionDir — restores the correct
+    // conversation after pod restart, or creates new if directory is empty.
+    // NOTE: cwd is the first arg (stored in session header), sessionDir is
+    // the second (where JSONL files are stored). Passing sessionDir as cwd
+    // caused pi-agent to encode the path and store JSONL in a different dir.
+    const frameworkSessionManager = SessionManager.continueRecent(process.cwd(), sessionDir);
+    const isNewSession = frameworkSessionManager.getEntries().length <= 1; // only session header
 
     const config = loadConfig();
     const kubeconfigRef: KubeconfigRef = {
@@ -425,7 +427,10 @@ export class AgentBoxSessionManager {
   private countJsonlMessages(sessionDir: string): number {
     try {
       const files = fs.readdirSync(sessionDir).filter((f) => f.endsWith(".jsonl"));
-      if (files.length === 0) return 0;
+      if (files.length === 0) {
+        console.log(`[agentbox-session] countJsonlMessages: no .jsonl files in ${sessionDir}`);
+        return 0;
+      }
 
       // Find the most recent file
       files.sort((a, b) => {
@@ -434,7 +439,8 @@ export class AgentBoxSessionManager {
         return bTime - aTime;
       });
 
-      const content = fs.readFileSync(path.join(sessionDir, files[0]), "utf-8");
+      const jsonlPath = path.join(sessionDir, files[0]);
+      const content = fs.readFileSync(jsonlPath, "utf-8");
       let count = 0;
       for (const line of content.split("\n")) {
         if (!line.trim()) continue;
@@ -445,8 +451,10 @@ export class AgentBoxSessionManager {
           }
         } catch { /* skip malformed */ }
       }
+      console.log(`[agentbox-session] countJsonlMessages: ${count} messages in ${jsonlPath}`);
       return count;
-    } catch {
+    } catch (err) {
+      console.warn(`[agentbox-session] countJsonlMessages error:`, err);
       return 0;
     }
   }

@@ -1,245 +1,152 @@
 # Siclaw Makefile
 #
-# Local development:
-#   make tui             — Run TUI (interactive terminal agent)
-#   make gateway         — Run Gateway (multi-user web server)
+# Usage:
+#   make help                                    — Show all targets
+#   make docker push REGISTRY=myregistry.com     — Build & push all images
+#   make docker-agentbox push-agentbox           — Build & push agentbox only
 #
-# Build & deploy:
-#   make build           — Compile TypeScript + Web frontend
-#   make deploy          — Full pipeline: build → docker → push → restart
-#   make deploy-gateway  — Build + deploy gateway only
-#   make deploy-agentbox — Build + deploy agentbox only
-#
-# Other:
-#   make test            — Type check + unit tests
-#   make logs            — View all component logs
-#   make status          — Show K8s deployment status
-#   make help            — Show all targets
+# Deploy via Helm:
+#   helm upgrade --install siclaw ./helm/siclaw -f helm/siclaw/values-local.yaml
 
-REGISTRY ?= scitix
+# ── Git metadata (auto-detected) ──
+GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+GIT_TAG    := $(shell git describe --tags --abbrev=0 --exact-match 2>/dev/null)
+GIT_DIRTY  := $(shell test -n "$$(git status --porcelain)" && echo "-dirty" || echo "")
+VERSION    := $(shell node -p "require('./package.json').version" 2>/dev/null || echo "0.0.0")
+
+# ── Configurable variables ──
+REGISTRY  ?= scitix
 NAMESPACE ?= siclaw
-TAG       ?= latest
+TAG       ?= $(if $(GIT_TAG),$(GIT_TAG),$(VERSION)-$(GIT_COMMIT)$(GIT_DIRTY))
 
+# ── Image names ──
 GATEWAY_IMAGE  = $(REGISTRY)/siclaw-gateway:$(TAG)
 AGENTBOX_IMAGE = $(REGISTRY)/siclaw-agentbox:$(TAG)
 CRON_IMAGE     = $(REGISTRY)/siclaw-cron:$(TAG)
 
-# ==================== Dev ====================
+# ── OCI labels injected into every image ──
+DOCKER_LABELS = \
+	--label org.opencontainers.image.version=$(VERSION) \
+	--label org.opencontainers.image.revision=$(GIT_COMMIT)$(GIT_DIRTY) \
+	--label org.opencontainers.image.created=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
-.PHONY: tui gateway dev
+# ── Self-documenting help (targets annotated with ## are auto-listed) ──
+.DEFAULT_GOAL := help
 
-## Run TUI agent (interactive terminal, single user)
-tui:
+help: ## Show this help
+	@awk 'BEGIN {FS = ":.*##"; printf "\n\033[1mUsage:\033[0m\n  make \033[36m<target>\033[0m [REGISTRY=xxx] [TAG=xxx]\n"} /^##@/ {printf "\n\033[1m%s\033[0m\n", substr($$0, 5)} /^[a-zA-Z_-]+:.*?##/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@echo ""
+
+# ==================== Development ====================
+##@ Development
+
+tui: ## Run TUI agent (interactive terminal)
 	npx tsx src/cli-main.ts
 
-## Run Gateway server (multi-user, local AgentBox spawner)
-gateway: build-web
+gateway: build-web ## Run Gateway server (multi-user, local spawner)
 	npx tsx src/gateway-main.ts
 
-## Alias: make dev = make tui
-dev: tui
+dev: tui ## Alias for tui
 
 # ==================== Build ====================
+##@ Build
 
-.PHONY: build build-ts build-web
+build: build-ts build-web ## Compile TypeScript + Web frontend
 
-## Compile TypeScript + Web frontend
-build: build-ts build-web
-
-## Compile TypeScript only
-build-ts:
+build-ts: ## Compile TypeScript
 	npx tsc --project tsconfig.json
 
-## Compile Web frontend (Vite)
-build-web:
+build-web: ## Compile Web frontend (Vite)
 	cd src/gateway/web && npm install && npm run build
 
 # ==================== Docker ====================
+##@ Docker
 
-.PHONY: build-docker build-docker-gateway build-docker-agentbox build-docker-cron
+docker: build ## Build all Docker images
+	docker build -f Dockerfile.gateway  $(DOCKER_LABELS) -t $(GATEWAY_IMAGE)  .
+	docker build -f Dockerfile.agentbox $(DOCKER_LABELS) -t $(AGENTBOX_IMAGE) .
+	docker build -f Dockerfile.cron     $(DOCKER_LABELS) -t $(CRON_IMAGE)     .
 
-## Build all Docker images
-build-docker: build
-	docker build -f Dockerfile.gateway  -t $(GATEWAY_IMAGE)  .
-	docker build -f Dockerfile.agentbox -t $(AGENTBOX_IMAGE) .
-	docker build -f Dockerfile.cron     -t $(CRON_IMAGE)     .
+docker-gateway: build ## Build gateway image
+	docker build -f Dockerfile.gateway $(DOCKER_LABELS) -t $(GATEWAY_IMAGE) .
 
-## Build gateway image (requires TS + Web)
-build-docker-gateway: build
-	docker build -f Dockerfile.gateway -t $(GATEWAY_IMAGE) .
+docker-agentbox: build-ts ## Build agentbox image
+	docker build -f Dockerfile.agentbox $(DOCKER_LABELS) -t $(AGENTBOX_IMAGE) .
 
-## Build agentbox image (requires TS only)
-build-docker-agentbox: build-ts
-	docker build -f Dockerfile.agentbox -t $(AGENTBOX_IMAGE) .
+docker-cron: build-ts ## Build cron image
+	docker build -f Dockerfile.cron $(DOCKER_LABELS) -t $(CRON_IMAGE) .
 
-## Build cron image (requires TS only)
-build-docker-cron: build-ts
-	docker build -f Dockerfile.cron -t $(CRON_IMAGE) .
+push: push-gateway push-agentbox push-cron ## Push all images to registry
 
-# ==================== Push ====================
-
-.PHONY: push push-gateway push-agentbox push-cron
-
-push: push-gateway push-agentbox push-cron
-push-gateway:
+push-gateway: ## Push gateway image
 	docker push $(GATEWAY_IMAGE)
-push-agentbox:
+
+push-agentbox: ## Push agentbox image
 	docker push $(AGENTBOX_IMAGE)
-push-cron:
+
+push-cron: ## Push cron image
 	docker push $(CRON_IMAGE)
 
-# ==================== Deploy ====================
-
-.PHONY: deploy deploy-gateway deploy-agentbox deploy-cron restart apply
-
-## Apply K8s resources (create or update Deployments, Services, PVCs, RBAC)
-apply:
-	kubectl apply -f k8s/siclaw-skills-pvc.yaml
-	kubectl apply -f k8s/gateway-deployment.yaml
-
-## Full pipeline: build → docker → push → apply → restart all
-deploy: build-docker push apply restart
-
-## Deploy gateway only
-deploy-gateway: build-docker-gateway push-gateway
-	kubectl apply -f k8s/gateway-deployment.yaml
-	kubectl -n $(NAMESPACE) rollout restart deployment siclaw-gateway
-	kubectl -n $(NAMESPACE) rollout status deployment siclaw-gateway --timeout=120s
-
-## Deploy agentbox only (deletes old pods; new ones created on next request)
-deploy-agentbox: build-docker-agentbox push-agentbox
-	kubectl -n $(NAMESPACE) delete pods -l siclaw.io/app=agentbox --ignore-not-found
-	@echo "Old agentbox pods deleted. New pods will be created on next chat.send."
-
-## Deploy cron worker only
-deploy-cron: build-docker-cron push-cron
-	kubectl apply -f k8s/cron-deployment.yaml
-	kubectl -n $(NAMESPACE) rollout restart deployment siclaw-cron
-	kubectl -n $(NAMESPACE) rollout status deployment siclaw-cron --timeout=120s
-
-## Restart all components (no rebuild)
-restart:
-	@echo "--- Restarting gateway ---"
-	kubectl -n $(NAMESPACE) rollout restart deployment siclaw-gateway
-	@echo "--- Restarting cron ---"
-	kubectl -n $(NAMESPACE) rollout restart deployment siclaw-cron
-	@echo "--- Cleaning up agentbox pods ---"
-	kubectl -n $(NAMESPACE) delete pods -l siclaw.io/app=agentbox --ignore-not-found
-	@echo "--- Waiting for rollouts ---"
-	kubectl -n $(NAMESPACE) rollout status deployment siclaw-gateway --timeout=120s
-	kubectl -n $(NAMESPACE) rollout status deployment siclaw-cron --timeout=120s
-	@echo "--- Done ---"
-
 # ==================== Test ====================
+##@ Test
 
-.PHONY: test typecheck unit
+test: typecheck unit ## Type check + unit tests
 
-## Type check + unit tests
-test: typecheck unit
-
-## Type check only (no emit)
-typecheck:
+typecheck: ## Type check (no emit)
 	npx tsc --project tsconfig.json --noEmit
 
-## Run all unit tests
-unit:
+unit: ## Run unit tests
 	npx vitest run
 
-# ==================== Logs ====================
+# ==================== Ops ====================
+##@ Ops
 
-.PHONY: logs logs-gateway logs-agentbox logs-cron
+info: ## Print build variables
+	@echo "VERSION:     $(VERSION)"
+	@echo "GIT_COMMIT:  $(GIT_COMMIT)$(GIT_DIRTY)"
+	@echo "GIT_TAG:     $(or $(GIT_TAG),(none))"
+	@echo "TAG:         $(TAG)"
+	@echo "REGISTRY:    $(REGISTRY)"
+	@echo "GATEWAY:     $(GATEWAY_IMAGE)"
+	@echo "AGENTBOX:    $(AGENTBOX_IMAGE)"
+	@echo "CRON:        $(CRON_IMAGE)"
 
-## View recent logs from all components
-logs:
+logs: ## View recent logs (all components)
 	@echo "=== Gateway ===" && \
-	kubectl -n $(NAMESPACE) logs --tail=50 -l app=siclaw-gateway && \
-	echo "" && \
-	echo "=== Cron ===" && \
-	kubectl -n $(NAMESPACE) logs --tail=30 -l app=siclaw-cron && \
-	echo "" && \
-	echo "=== AgentBox ===" && \
+	kubectl -n $(NAMESPACE) logs --tail=50 -l app=siclaw-gateway 2>/dev/null; \
+	echo "\n=== Cron ===" && \
+	kubectl -n $(NAMESPACE) logs --tail=30 -l app=siclaw-cron 2>/dev/null; \
+	echo "\n=== AgentBox ===" && \
 	for pod in $$(kubectl -n $(NAMESPACE) get pods -l siclaw.io/app=agentbox --no-headers -o name 2>/dev/null); do \
 		echo "--- $$pod ---"; \
 		kubectl -n $(NAMESPACE) logs --tail=30 $$pod; \
 	done
 
-## Follow gateway logs
-logs-gateway:
+logs-gateway: ## Follow gateway logs
 	kubectl -n $(NAMESPACE) logs -f deployment/siclaw-gateway
 
-## Follow latest agentbox logs
-logs-agentbox:
+logs-agentbox: ## Follow latest agentbox logs
 	kubectl -n $(NAMESPACE) logs -f $$(kubectl -n $(NAMESPACE) get pods -l siclaw.io/app=agentbox --sort-by=.metadata.creationTimestamp --no-headers -o name | tail -1)
 
-## Follow cron logs
-logs-cron:
+logs-cron: ## Follow cron logs
 	kubectl -n $(NAMESPACE) logs -f deployment/siclaw-cron
 
-# ==================== Status ====================
-
-.PHONY: status
-
-## Show K8s deployment status
-status:
+status: ## Show K8s deployment status
 	@echo "=== Pods ==="
 	@kubectl -n $(NAMESPACE) get pods -o wide
-	@echo ""
-	@echo "=== Gateway Image ==="
-	@kubectl -n $(NAMESPACE) get deployment siclaw-gateway -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
-	@echo "=== AgentBox Image (from env) ==="
-	@kubectl -n $(NAMESPACE) get deployment siclaw-gateway -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="AGENTBOX_IMAGE")].value}{"\n"}'
-	@echo "=== Cron Image ==="
-	@kubectl -n $(NAMESPACE) get deployment siclaw-cron -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}' 2>/dev/null || echo "(not deployed)"
+	@echo "\n=== Images ==="
+	@kubectl -n $(NAMESPACE) get deployment siclaw-gateway -o jsonpath='gateway:  {.spec.template.spec.containers[0].image}{"\n"}' 2>/dev/null || true
+	@kubectl -n $(NAMESPACE) get deployment siclaw-cron -o jsonpath='cron:     {.spec.template.spec.containers[0].image}{"\n"}' 2>/dev/null || true
 
 # ==================== Clean ====================
+##@ Clean
 
-.PHONY: clean clean-pods
-
-## Remove build artifacts (dist/, tsbuildinfo, web build)
-clean:
+clean: ## Remove build artifacts
 	rm -rf dist *.tsbuildinfo src/gateway/web/dist
 
-## Delete all agentbox pods (K8s)
-clean-pods:
-	kubectl -n $(NAMESPACE) delete pods -l siclaw.io/app=agentbox --ignore-not-found
-
-# ==================== Help ====================
-
-.PHONY: help
-
-## Show all targets
-help:
-	@echo "Usage: make <target>"
-	@echo ""
-	@echo "Dev:"
-	@echo "  tui              Run TUI agent (interactive terminal)"
-	@echo "  gateway          Run Gateway server (multi-user)"
-	@echo "  dev              Alias for tui"
-	@echo ""
-	@echo "Build:"
-	@echo "  build            Compile TypeScript + Web frontend"
-	@echo "  build-ts         Compile TypeScript only"
-	@echo "  build-web        Compile Web frontend only"
-	@echo "  build-docker     Build all Docker images"
-	@echo ""
-	@echo "Deploy (K8s):"
-	@echo "  deploy           Full: build + docker + push + apply + restart"
-	@echo "  apply            Apply K8s resources (create/update)"
-	@echo "  deploy-gateway   Deploy gateway only"
-	@echo "  deploy-agentbox  Deploy agentbox only"
-	@echo "  deploy-cron      Deploy cron only"
-	@echo "  restart          Restart all (no rebuild)"
-	@echo ""
-	@echo "Test:"
-	@echo "  test             Type check + unit tests"
-	@echo "  typecheck        Type check only"
-	@echo "  unit             Run unit tests"
-	@echo ""
-	@echo "Ops:"
-	@echo "  logs             View recent logs (all)"
-	@echo "  logs-gateway     Follow gateway logs"
-	@echo "  logs-agentbox    Follow agentbox logs"
-	@echo "  logs-cron        Follow cron logs"
-	@echo "  status           Show K8s deployment status"
-	@echo "  clean            Remove build artifacts"
-	@echo "  clean-pods       Delete all agentbox pods (K8s)"
+# ── All targets are phony (no file outputs) ──
+.PHONY: help tui gateway dev build build-ts build-web \
+	docker docker-gateway docker-agentbox docker-cron \
+	push push-gateway push-agentbox push-cron \
+	test typecheck unit \
+	info logs logs-gateway logs-agentbox logs-cron status clean
