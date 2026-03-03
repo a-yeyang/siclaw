@@ -115,7 +115,7 @@ export function createHttpServer(sessionManager: AgentBoxSessionManager): http.S
    * The message is sent to the Agent, and responses are returned via SSE stream.
    */
   addRoute("POST", "/api/prompt", async (req, res) => {
-    const body = (await parseJsonBody(req)) as { sessionId?: string; text?: string; mode?: SessionMode; modelProvider?: string; modelId?: string; brainType?: BrainType; modelConfig?: Record<string, unknown>; credentials?: { manifest: Array<Record<string, unknown>>; files: Array<{ name: string; content: string; mode?: number }> } };
+    const body = (await parseJsonBody(req)) as { sessionId?: string; text?: string; mode?: SessionMode; modelProvider?: string; modelId?: string; brainType?: BrainType; modelConfig?: Record<string, unknown>; credentials?: { manifest: Array<Record<string, unknown>>; files: Array<{ name: string; content: string; mode?: number }> }; userLanguage?: string };
 
     if (!body.text) {
       sendJson(res, 400, { error: "Missing 'text' field" });
@@ -140,6 +140,11 @@ export function createHttpServer(sessionManager: AgentBoxSessionManager): http.S
       fs.writeFileSync(path.join(credDir, "manifest.json"), JSON.stringify(body.credentials.manifest, null, 2));
       managed.kubeconfigRef.credentialsDir = credDir;
       console.log(`[agentbox-http] Materialized ${body.credentials.files.length} credential files to ${credDir}`);
+    }
+
+    // Update user language preference (mutable ref read by system prompt builder)
+    if (body.userLanguage !== undefined) {
+      managed.languageRef.language = body.userLanguage || undefined;
     }
 
     // Dynamically register provider config from gateway DB (before findModel)

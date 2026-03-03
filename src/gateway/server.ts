@@ -1161,8 +1161,19 @@ async function resolveJwtSecret(sysConfigRepo: SystemConfigRepository | null): P
  * no dots, all uppercase/underscores), resolve it from process.env.
  */
 function resolveApiKey(value: string): string {
+  // Legacy: bare ALL_CAPS_NAME treated as env var name
   if (/^[A-Z_][A-Z0-9_]*$/.test(value)) {
     return process.env[value] ?? value;
+  }
+  // $VAR / ${VAR} syntax — inline env-var references
+  if (/\$\{[A-Za-z_][A-Za-z0-9_]*\}|\$[A-Za-z_][A-Za-z0-9_]*/.test(value)) {
+    return value.replace(
+      /\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g,
+      (_, braced, bare) => {
+        const name = braced || bare;
+        return process.env[name] ?? "";
+      },
+    );
   }
   return value;
 }

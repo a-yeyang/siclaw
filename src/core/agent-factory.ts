@@ -47,7 +47,7 @@ import { ClaudeSdkBrain } from "./brains/claude-sdk-brain.js";
 import type { BrainSession, BrainType } from "./brain-session.js";
 import { hasOpenAIProvider, ensureProxy } from "./llm-proxy.js";
 import { McpClientManager } from "./mcp-client.js";
-import { loadConfig, getEmbeddingConfig, getConfigPath } from "./config.js";
+import { loadConfig, getEmbeddingConfig, getConfigPath, getDefaultLlm } from "./config.js";
 
 export type SessionMode = "web" | "channel" | "cli";
 
@@ -63,6 +63,11 @@ export interface LlmConfigRef {
   api?: string;
 }
 
+/** Mutable ref to user language preference (updated per-request by gateway prompt handler) */
+export interface LanguageRef {
+  language?: string;
+}
+
 export interface CreateSiclawSessionOpts {
   sessionManager?: SessionManager;
   kubeconfigRef?: KubeconfigRef;
@@ -74,10 +79,8 @@ export interface CreateSiclawSessionOpts {
   systemPromptAppend?: string;
   /** Pre-initialized shared memory indexer (AgentBox level) — skips per-session creation */
   memoryIndexer?: MemoryIndexer;
-  /** Pre-initialized shared MCP client manager (AgentBox level) — skips per-session init */
-  mcpManager?: McpClientManager;
-  /** Pre-resolved MCP tools from shared mcpManager — avoids re-discovery */
-  mcpTools?: ToolDefinition[];
+  /** Mutable language ref — updated per-request, read by system prompt builder */
+  languageRef?: LanguageRef;
 }
 
 export interface SiclawSessionResult {
@@ -88,6 +91,8 @@ export interface SiclawSessionResult {
   kubeconfigRef: KubeconfigRef;
   /** Mutable ref to LLM config for deep_search sub-agents */
   llmConfigRef: LlmConfigRef;
+  /** Mutable ref to user language preference */
+  languageRef: LanguageRef;
   /** Mutable skill dirs array — update contents + call session.reload() to switch */
   skillsDirs: string[];
   mode: SessionMode;
@@ -289,6 +294,16 @@ export async function createSiclawSession(
   const config = loadConfig();
 
   const authStorage = AuthStorage.create();
+
+  // Bridge Siclaw-configured apiKey into pi-agent's credential chain (highest priority)
+  const defaultLlm = getDefaultLlm();
+  if (defaultLlm?.apiKey) {
+    const providerName = config.default?.provider ?? Object.keys(config.providers)[0];
+    if (providerName) {
+      authStorage.setRuntimeApiKey(providerName, defaultLlm.apiKey);
+    }
+  }
+
   // Load models from settings.json
   const configPath = getConfigPath();
   const modelsJson = fs.existsSync(configPath) ? configPath : undefined;
@@ -296,6 +311,7 @@ export async function createSiclawSession(
 
   const kubeconfigRef: KubeconfigRef = opts?.kubeconfigRef ?? {};
   const llmConfigRef: LlmConfigRef = {};
+  const languageRef: LanguageRef = opts?.languageRef ?? {};
 
   const mode = opts?.mode ?? "web";
 
@@ -425,7 +441,7 @@ export async function createSiclawSession(
 
   const loader = new DefaultResourceLoader({
     cwd,
-    systemPromptOverride: () => buildSreSystemPrompt(memoryDir),
+    systemPromptOverride: () => buildSreSystemPrompt(memoryDir, languageRef.language),
     appendSystemPromptOverride: () => {
       const parts = buildAppendSystemPrompt(skillsBase, getUserSkillDirName, getPlatformSkillDirName, memoryDir);
       if (workspaceSystemPromptAppend) {
@@ -465,7 +481,7 @@ export async function createSiclawSession(
       createEndInvestigationTool(dpState),
     );
 
-    const systemPrompt = buildSreSystemPrompt(memoryDir);
+    const systemPrompt = buildSreSystemPrompt(memoryDir, languageRef.language);
 
     // Build the same append content that pi-agent gets via appendSystemPromptOverride
     const appendParts = buildAppendSystemPrompt(skillsBase, getUserSkillDirName, getPlatformSkillDirName, memoryDir);
@@ -503,6 +519,7 @@ export async function createSiclawSession(
       customTools: sdkTools,
       kubeconfigRef,
       llmConfigRef,
+      languageRef,
       skillsDirs,
       mode,
       mcpManager,
@@ -553,5 +570,5 @@ export async function createSiclawSession(
   });
 
   const brain: BrainSession = new PiAgentBrain(session);
-  return { brain, session, modelFallbackMessage, customTools, kubeconfigRef, llmConfigRef, skillsDirs, mode, mcpManager, memoryIndexer };
+  return { brain, session, modelFallbackMessage, customTools, kubeconfigRef, llmConfigRef, languageRef, skillsDirs, mode, mcpManager, memoryIndexer };
 }

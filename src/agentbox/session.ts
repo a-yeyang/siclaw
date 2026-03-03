@@ -5,18 +5,19 @@
  * Reuses createSiclawSession() to create Agents.
  * Supports session persistence via User PV.
  *
- * Shared components (memory indexer, MCP) are held at the AgentBox level and reused
- * across sessions. Sessions are released after each prompt completes (request-level
- * lifecycle) and restored from JSONL on the next prompt.
+ * The memory indexer is shared at the AgentBox level and reused across sessions.
+ * MCP connections are created per-session by createSiclawSession and shut down on release.
+ * Sessions are released after each prompt completes (request-level lifecycle)
+ * and restored from JSONL on the next prompt.
  */
 
 import fs from "node:fs";
 import path from "node:path";
-import type { AgentSession, ToolDefinition } from "@mariozechner/pi-coding-agent";
+import type { AgentSession } from "@mariozechner/pi-coding-agent";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
-import { createSiclawSession, type KubeconfigRef, type LlmConfigRef, type SessionMode } from "../core/agent-factory.js";
+import { createSiclawSession, type KubeconfigRef, type LlmConfigRef, type LanguageRef, type SessionMode } from "../core/agent-factory.js";
 import type { BrainSession, BrainType } from "../core/brain-session.js";
-import { McpClientManager } from "../core/mcp-client.js";
+import type { McpClientManager } from "../core/mcp-client.js";
 import { createMemoryIndexer, type MemoryIndexer } from "../memory/index.js";
 import { saveSessionMemory } from "../memory/session-summarizer.js";
 import type { DpState } from "../tools/dp-tools.js";
@@ -47,6 +48,8 @@ export interface ManagedSession {
   kubeconfigRef: KubeconfigRef;
   /** Mutable LLM config ref for deep_search sub-agents — updated by gateway prompt handler */
   llmConfigRef: LlmConfigRef;
+  /** Mutable user language preference — updated per-request by gateway prompt handler */
+  languageRef: LanguageRef;
   /** Whether the current prompt was aborted (prevents empty response retry) */
   _aborted: boolean;
   /** Mutable skill dirs array passed to DefaultResourceLoader — update + reload to switch */
@@ -55,9 +58,9 @@ export interface ManagedSession {
   mode: SessionMode;
   /** Brain type used by this session */
   brainType: BrainType;
-  /** MCP client manager — now shared at AgentBox level, NOT per-session */
+  /** MCP client manager — per-session, shut down on release/close */
   mcpManager?: McpClientManager;
-  /** Memory indexer — now shared at AgentBox level, NOT per-session */
+  /** Memory indexer — shared at AgentBox level, NOT per-session */
   memoryIndexer?: MemoryIndexer;
   /** Mutable DP state — only set for SDK brain (pi-agent uses extension state) */
   dpState?: DpState;
@@ -77,8 +80,6 @@ export class AgentBoxSessionManager {
 
   // ── Shared components (AgentBox-level, outlive individual sessions) ──
   private _sharedMemoryIndexer: MemoryIndexer | null = null;
-  private _sharedMcpManager: McpClientManager | null = null;
-  private _sharedMcpTools: ToolDefinition[] = [];
   /** Whether shared components have been initialized */
   private _sharedInitialized = false;
 
@@ -127,7 +128,6 @@ export class AgentBoxSessionManager {
     if (this._sharedInitialized) return;
     this._sharedInitialized = true;
 
-    const config = loadConfig();
     const memoryDir = this.getMemoryDir();
 
     // ── Memory indexer ──
@@ -144,21 +144,7 @@ export class AgentBoxSessionManager {
       console.warn(`[agentbox-session] Shared memory indexer init failed:`, err);
       this._sharedMemoryIndexer = null;
     }
-
-    // ── MCP client manager ──
-    const mcpServers = config.mcpServers;
-    if (mcpServers && Object.keys(mcpServers).length > 0) {
-      try {
-        this._sharedMcpManager = new McpClientManager({ mcpServers } as any);
-        await this._sharedMcpManager.initialize();
-        this._sharedMcpTools = this._sharedMcpManager.getTools();
-        console.log(`[agentbox-session] Shared MCP manager initialized (${this._sharedMcpTools.length} tools)`);
-      } catch (err) {
-        console.warn(`[agentbox-session] Shared MCP init failed:`, err);
-        this._sharedMcpManager = null;
-        this._sharedMcpTools = [];
-      }
-    }
+    // MCP is initialized per-session inside createSiclawSession via loadMcpServersConfig.
   }
 
   /**
@@ -208,6 +194,7 @@ export class AgentBoxSessionManager {
     const kubeconfigRef: KubeconfigRef = {
       credentialsDir: path.resolve(process.cwd(), config.paths.credentialsDir),
     };
+    const languageRef: LanguageRef = {};
     const effectiveMode = mode ?? "web";
     const effectiveBrainType = brainType ?? "pi-agent";
     const result = await createSiclawSession({
@@ -215,10 +202,8 @@ export class AgentBoxSessionManager {
       kubeconfigRef,
       mode: effectiveMode,
       brainType: effectiveBrainType,
-      // Pass shared components so createSiclawSession reuses them
       memoryIndexer: this._sharedMemoryIndexer ?? undefined,
-      mcpManager: this._sharedMcpManager ?? undefined,
-      mcpTools: this._sharedMcpTools.length > 0 ? this._sharedMcpTools : undefined,
+      languageRef,
     });
 
     // New session: re-sync memory index to pick up files from previous sessions
@@ -243,6 +228,7 @@ export class AgentBoxSessionManager {
       _bufferUnsub: null,
       kubeconfigRef,
       llmConfigRef: result.llmConfigRef,
+      languageRef: result.languageRef,
       _aborted: false,
       skillsDirs: result.skillsDirs,
       mode: effectiveMode,
@@ -403,7 +389,16 @@ export class AgentBoxSessionManager {
       console.warn(`[agentbox-session] Memory auto-save failed for ${sessionId}:`, err);
     }
 
-    // 2. Sync shared memory index to pick up the new summary file
+    // 2. Shutdown per-session MCP connections
+    if (managed.mcpManager) {
+      try {
+        await managed.mcpManager.shutdown();
+      } catch (err) {
+        console.warn(`[agentbox-session] MCP shutdown failed for ${sessionId}:`, err);
+      }
+    }
+
+    // 3. Sync shared memory index to pick up the new summary file
     if (this._sharedMemoryIndexer) {
       await this._sharedMemoryIndexer.sync().catch((err) => {
         console.warn(`[agentbox-session] Memory sync on release failed:`, err);
@@ -498,18 +493,6 @@ export class AgentBoxSessionManager {
       }
     }
     this.sessions.clear();
-
-    // Shutdown shared MCP connections
-    if (this._sharedMcpManager) {
-      try {
-        await this._sharedMcpManager.shutdown();
-        console.log(`[agentbox-session] Shared MCP manager shut down`);
-      } catch (err) {
-        console.warn(`[agentbox-session] Shared MCP shutdown error:`, err);
-      }
-      this._sharedMcpManager = null;
-      this._sharedMcpTools = [];
-    }
 
     // Close shared memory indexer
     if (this._sharedMemoryIndexer) {
