@@ -136,22 +136,17 @@ function buildAppendSystemPrompt(
   const parts: string[] = [];
 
   const skillSearchDirs: string[] = [];
-  const platformDirs = new Set<string>();
   const activeDir = path.join(skillsBase, "user", getUserSkillDirName());
   if (fs.existsSync(activeDir)) {
     skillSearchDirs.push(activeDir);
-    const sysDir = path.join(skillsBase, "user", getPlatformSkillDirName());
-    if (fs.existsSync(sysDir)) {
-      skillSearchDirs.push(sysDir);
-      platformDirs.add(sysDir);
-    }
+    // Platform skills (create-skill, update-skill, manage-skill) are excluded —
+    // they are internal agent guides, not user-facing skills.
   } else {
-    const SKILL_SCOPES = ["core", "team", "extension", "user", "platform"];
+    const SKILL_SCOPES = ["core", "team", "extension", "user"];
     for (const scope of SKILL_SCOPES) {
       const scopeDir = path.join(skillsBase, scope);
       if (fs.existsSync(scopeDir)) {
         skillSearchDirs.push(scopeDir);
-        if (scope === "platform") platformDirs.add(scopeDir);
       }
     }
   }
@@ -161,7 +156,6 @@ function buildAppendSystemPrompt(
   const seenSkills = new Set<string>();
 
   for (const searchDir of skillSearchDirs) {
-    const isPlatformDir = platformDirs.has(searchDir);
     try {
       const entries = fs.readdirSync(searchDir, { withFileTypes: true });
       for (const entry of entries) {
@@ -169,9 +163,6 @@ function buildAppendSystemPrompt(
         if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
         if (seenSkills.has(entry.name)) continue;
         seenSkills.add(entry.name);
-        // Platform skills are internal (create-skill, update-skill, manage-skill) —
-        // they're loaded by pi-agent but should not appear in the user-facing skill listing.
-        if (isPlatformDir) continue;
         const skillName = entry.name;
         const sDir = path.join(searchDir, skillName, "scripts");
         let scripts: string[] = [];
@@ -372,10 +363,12 @@ export async function createSiclawSession(
   let skillsDirs: string[];
   if (fs.existsSync(userSkillDir)) {
     skillsDirs = [userSkillDir];
-    if (fs.existsSync(platformSkillDir)) skillsDirs.push(platformSkillDir);
+    // Platform skills (create-skill, update-skill, manage-skill) are internal agent guides —
+    // they should NOT be listed as user-facing skills. The agent can still read them from disk
+    // when needed (via the system prompt instructions for skill management).
   } else {
-    // CLI fallback
-    const SKILL_SCOPES = ["core", "team", "extension", "user", "platform"];
+    // CLI fallback — exclude "platform" scope from skill loading
+    const SKILL_SCOPES = ["core", "team", "extension", "user"];
     skillsDirs = SKILL_SCOPES
       .map((scope) => path.join(skillsBase, scope))
       .filter((dir) => fs.existsSync(dir));
