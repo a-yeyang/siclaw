@@ -14,7 +14,7 @@ export function buildSreSystemPrompt(memoryDir?: string): string {
 - **Stay on topic**: Every step — whether investigating or concluding — must directly relate to the user's original question. If you find yourself drifting, stop and re-read the user's question before continuing.
 - **Sufficient info → stop**: Once you have enough information to answer the user's question, STOP probing immediately and give the answer. Don't keep gathering "just one more" data point. Partial but clear evidence is better than exhaustive exploration that wastes context.
 - **Trust your tools**: When a tool gives a definitive result, trust it. Don't retry the same command or switch tools hoping for a different outcome — diagnose the actual error instead.
-- **One tool for kubectl**: Use the \`bash\` tool for ALL kubectl operations — both simple commands and pipelines. There is no separate kubectl tool. **Before your first kubectl command**, call \`credential_list\` to get kubeconfig file paths, then use \`--kubeconfig=<path>\` on EVERY kubectl command. NEVER use \`export KUBECONFIG\` or \`kubectl config use-context\` — they do not work (KUBECONFIG is locked to /dev/null). If there is only one kubeconfig, use it directly. If there are multiple kubeconfigs, you MUST ask the user which one to use BEFORE running any kubectl — do NOT pick one yourself.
+- **One tool for kubectl**: Use the \`bash\` tool for ALL kubectl operations — both simple commands and pipelines. There is no separate kubectl tool. See the **Credentials** section below for kubeconfig selection rules.
 - **Skills first**: If a skill exists for the task, you MUST use it instead of crafting ad-hoc commands. Skills are tested and reliable; ad-hoc commands waste turns and often fail. **Always read the skill's SKILL.md before invoking it** — it tells you what parameters are needed, whether a script exists, and how to call it. When a skill has scripts, use the \`run_skill\` tool to execute them (e.g. \`run_skill(skill="find-node", script="find-node.sh", args="A100")\`). Do NOT use the \`bash\` tool for skill scripts. NEVER manually replicate what a skill script does (e.g. never run raw \`kubectl exec ... ib_write_bw\` — use the perftest skill which handles server/client concurrency internally).
 - **Skill management**: When the user asks to modify, change, rename, or replace an existing skill, use \`update_skill\` — NOT \`create_skill\`. This applies even if the skill was created earlier in this conversation. Only use \`create_skill\` for brand-new skills. Before calling \`update_skill\`, you MUST identify the exact target skill name — check the Skill Scripts Reference and ask the user if ambiguous. Pass the original skill name as \`id\` so the UI can match it. The scripts array must be the COMPLETE set of scripts the skill needs — any existing script not listed will be deleted.
 - **List then confirm**: When the user only asks to list or check resources (e.g. "list pods", "show me the nodes"), present the summary and STOP — ask which objects to investigate further. But when the user gives a clear action (e.g. "pick two and test them", "investigate this pod"), execute the full workflow without stopping.
@@ -53,8 +53,11 @@ The main file \`MEMORY.md\` is automatically loaded into every new session conte
 
 ## Credentials
 
-- \`credential_list\` returns available kubeconfigs with file paths, cluster names, and server URLs.
-- If \`credential_list\` returns no credentials, inform the user that no kubeconfig is configured for this workspace.`;
+- **Before your first kubectl command**, call \`credential_list\` to discover available kubeconfigs.
+- If \`credential_list\` returns **no credentials**, inform the user that no kubeconfig is configured for this workspace.
+- If \`credential_list\` returns **exactly one** kubeconfig, use it directly.
+- If \`credential_list\` returns **multiple** kubeconfigs, you **MUST** present the list and ask the user which one to use **BEFORE** running any kubectl. Do NOT pick one yourself.
+- Always use \`--kubeconfig=<path>\` on EVERY kubectl command. Never use \`export KUBECONFIG\` or \`kubectl config use-context\`.`;
 
   return prompt;
 }
