@@ -38,6 +38,17 @@ function parseHypotheses(input: string): ParsedHypothesis[] {
         return headerSplit.map((block, i) => parseBlock(block.trim(), i + 1));
     }
 
+    // Strategy 2.5: Generic numbered headings (### 1. title / ## 1. title)
+    // Catches both Chinese and English formats like "### 1. L40节点..." or "### 1. Node failure..."
+    const numberedHeadingSplit = input.split(/\n(?=#{2,3}\s*\d+[.)]\s)/).filter(b => b.trim());
+    if (numberedHeadingSplit.length >= 2) {
+        const hasNumbered = (b: string) => /^#{2,3}\s*\d+[.)]\s/m.test(b);
+        const hypoBlocks = numberedHeadingSplit.filter(hasNumbered);
+        if (hypoBlocks.length >= 2) {
+            return hypoBlocks.map((block, i) => parseBlock(block.trim(), i + 1));
+        }
+    }
+
     // Strategy 3: Bold-prefixed (**Hypothesis N: title** / **H N: title**)
     const boldSplit = input.split(/\n(?=\*{2}(?:Hypothesis|H)\s*\d)/i).filter(b => b.trim());
     if (boldSplit.length >= 2) {
@@ -67,11 +78,11 @@ function parseBlock(block: string, fallbackIndex: number): ParsedHypothesis {
         const boldHypoMatch = line.match(/^\*{2}(?:Hypothesis|H)\s*\d+[:\s]*(.*?)\*{2}\s*$/i);
         if (boldHypoMatch) {
             const inner = boldHypoMatch[1];
-            // Extract inline confidence: (Confidence: 70%) or (70%)
-            const inlineConf = inner.match(/[(\uff08](?:confidence[:\s]*)?(\d+)\s*%[)\uff09]/i);
+            // Extract inline confidence: (Confidence: 70%) or (70%) or (置信度: 70%)
+            const inlineConf = inner.match(/[(\uff08](?:confidence|置信度)[:\s：]*(\d+)\s*%[)\uff09]/i);
             if (inlineConf) confidence = parseInt(inlineConf[1], 10);
             // Title = inner without the confidence part
-            title = cleanMarkdown(inner.replace(/[(\uff08](?:confidence[:\s]*)?\d+\s*%[)\uff09]/i, '').trim());
+            title = cleanMarkdown(inner.replace(/[(\uff08](?:confidence|置信度)[:\s：]*\d+\s*%[)\uff09]/i, '').trim());
             continue;
         }
 
@@ -79,14 +90,24 @@ function parseBlock(block: string, fallbackIndex: number): ParsedHypothesis {
         const headingMatch = line.match(/^#{2,3}\s*(?:Hypothesis|H)\s*\d+[:\s]*(.*)/i);
         if (headingMatch) {
             const inner = headingMatch[1];
-            const inlineConf = inner.match(/[(\uff08](?:confidence[:\s]*)?(\d+)\s*%[)\uff09]/i);
+            const inlineConf = inner.match(/[(\uff08](?:confidence|置信度)[:\s：]*(\d+)\s*%[)\uff09]/i);
             if (inlineConf) confidence = parseInt(inlineConf[1], 10);
-            title = cleanMarkdown(inner.replace(/[(\uff08](?:confidence[:\s]*)?\d+\s*%[)\uff09]/i, '').trim());
+            title = cleanMarkdown(inner.replace(/[(\uff08](?:confidence|置信度)[:\s：]*\d+\s*%[)\uff09]/i, '').trim());
             continue;
         }
 
-        // Extract confidence: **Confidence**: 85% or (85%) patterns (standalone line)
-        const confMatch = line.match(/^\*{0,2}confidence\*{0,2}[:\s]*(\d+)\s*%/i);
+        // Generic numbered heading (### 1. title (置信度: 75%))
+        const genericHeadingMatch = line.match(/^#{2,3}\s*\d+[.)]\s*(.*)/);
+        if (genericHeadingMatch) {
+            const inner = genericHeadingMatch[1];
+            const inlineConf = inner.match(/[(\uff08](?:confidence|置信度)[:\s：]*(\d+)\s*%[)\uff09]/i);
+            if (inlineConf) confidence = parseInt(inlineConf[1], 10);
+            title = cleanMarkdown(inner.replace(/[(\uff08](?:confidence|置信度)[:\s：]*\d+\s*%[)\uff09]/i, '').trim());
+            continue;
+        }
+
+        // Extract confidence: **Confidence**: 85% or (85%) or 置信度: 85% patterns (standalone line)
+        const confMatch = line.match(/^\*{0,2}(?:confidence|置信度)\*{0,2}[:\s：]*(\d+)\s*%/i);
         if (confMatch) {
             confidence = parseInt(confMatch[1], 10);
             continue;
@@ -102,8 +123,8 @@ function parseBlock(block: string, fallbackIndex: number): ParsedHypothesis {
         // Strip leading bullet for metadata matching
         const stripped = line.replace(/^[-*]\s+/, '');
 
-        // Description header: Description: ... or - Description: ...
-        const descMatch = stripped.match(/^\*{0,2}description\*{0,2}[:\s]*(.*)/i);
+        // Description header: Description: ... or 描述: ... or - Description: ...
+        const descMatch = stripped.match(/^\*{0,2}(?:description|描述)\*{0,2}[:\s：]*(.*)/i);
         if (descMatch && descMatch[1]) {
             const cleaned = cleanMarkdown(descMatch[1]);
             if (!title) title = cleaned;
@@ -113,13 +134,13 @@ function parseBlock(block: string, fallbackIndex: number): ParsedHypothesis {
         }
 
         // Validation / verification method lines
-        if (stripped.match(/^(?:\*{0,2})(?:validation method|validation|expected result)(?:\*{0,2})[:\s]/i)) {
+        if (stripped.match(/^(?:\*{0,2})(?:validation method|validation|expected result|验证方法|验证|预期结果)(?:\*{0,2})[:\s：]/i)) {
             detailLines.push(cleanMarkdown(stripped));
             continue;
         }
 
         // First substantial non-metadata line becomes title if not set
-        if (!title && stripped.length > 10 && !stripped.startsWith('**Validation') && !stripped.startsWith('**Confidence')) {
+        if (!title && stripped.length > 10 && !stripped.startsWith('**Validation') && !stripped.startsWith('**Confidence') && !stripped.startsWith('**验证') && !stripped.startsWith('**置信度')) {
             title = cleanMarkdown(stripped);
             continue;
         }
