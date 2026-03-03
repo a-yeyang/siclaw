@@ -8,7 +8,8 @@ import { ScheduleCard, type ScheduleCardStatus } from './ScheduleCard';
 import { InvestigationCard } from './InvestigationCard';
 import { HypothesesCard } from './HypothesesCard';
 import { DpChecklistCard, type DpChecklistItem } from './DpChecklistCard';
-import type { PilotMessage, ContextUsage, InvestigationProgress } from '@/hooks/usePilot';
+import { WelcomeArea } from './WelcomeArea';
+import type { PilotMessage, ContextUsage, InvestigationProgress, SystemStatus } from '@/hooks/usePilot';
 import type { WsStatus } from '@/hooks/useWebSocket';
 import type { Skill } from '@/pages/Skills/skillsData';
 
@@ -46,6 +47,8 @@ export interface PilotAreaProps {
     dpChecklist?: DpChecklistItem[] | null;
     onHypothesesConfirmed?: (hypotheses: Array<{ id: string; text: string; confidence: number }>) => void;
     onExitDp?: () => void;
+    systemStatus?: SystemStatus | null;
+    onNavigateModels?: () => void;
 }
 
 /** Compute superseded status for skill messages */
@@ -145,7 +148,7 @@ function computeScheduleStatuses(messages: PilotMessage[]): Map<string, Schedule
     return statuses;
 }
 
-export function PilotArea({ messages, isLoading, isLoadingHistory, wsStatus, isConnected, hasMore, isLoadingMore, sendMessage, abortResponse, loadMoreHistory, sendRpc, contextUsage, isCompacting, skills, editingSkill, onEditSkill, onClearEditSkill, onSkillSaved, onOpenSkillPanel, onOpenSchedulePanel, panelMessage, updateMessageMeta, pendingMessages, onRemovePending, investigationProgress, dpActive, onSetDpActive, dpFocus, dpChecklist, onHypothesesConfirmed, onExitDp }: PilotAreaProps) {
+export function PilotArea({ messages, isLoading, isLoadingHistory, wsStatus, isConnected, hasMore, isLoadingMore, sendMessage, abortResponse, loadMoreHistory, sendRpc, contextUsage, isCompacting, skills, editingSkill, onEditSkill, onClearEditSkill, onSkillSaved, onOpenSkillPanel, onOpenSchedulePanel, panelMessage, updateMessageMeta, pendingMessages, onRemovePending, investigationProgress, dpActive, onSetDpActive, dpFocus, dpChecklist, onHypothesesConfirmed, onExitDp, systemStatus, onNavigateModels }: PilotAreaProps) {
     const scrollRef = useRef<HTMLDivElement>(null);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const prevScrollHeightRef = useRef(0);
@@ -258,11 +261,11 @@ export function PilotArea({ messages, isLoading, isLoadingHistory, wsStatus, isC
                             <p className="text-sm">Loading messages...</p>
                         </div>
                     ) : messages.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-                            <Cpu className="w-12 h-12 mb-4 text-gray-300" />
-                            <p className="text-lg font-medium">Start a conversation</p>
-                            <p className="text-sm mt-1">Ask me anything about your infrastructure</p>
-                        </div>
+                        <WelcomeArea
+                            systemStatus={systemStatus ?? null}
+                            onSendPrompt={sendMessage}
+                            onNavigateModels={onNavigateModels ?? (() => {})}
+                        />
                     ) : (
                         <>
                             {isLoadingMore && (

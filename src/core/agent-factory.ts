@@ -212,6 +212,34 @@ function buildAppendSystemPrompt(
     parts.push(lines.join("\n"));
   }
 
+  // Load PROFILE.md (user profile for personalized interactions)
+  const profileFile = path.join(memoryDir, "PROFILE.md");
+  if (fs.existsSync(profileFile)) {
+    const profileContent = fs.readFileSync(profileFile, "utf-8").trim();
+    if (profileContent) {
+      parts.push(`\n## User Profile\n\n${profileContent}`);
+    }
+  } else {
+    // First-session: instruct agent to introduce itself and collect user context
+    parts.push(`\n## First Session — Getting to Know the User
+
+This is a new user (no PROFILE.md found). In your first interaction:
+1. Introduce yourself warmly as Siclaw, a personal SRE assistant that learns and remembers.
+2. Briefly mention your key capabilities: skill-based diagnostics, deep investigation, persistent memory, scheduled automation.
+3. Through natural conversation, learn about the user: their name, role, what infrastructure they manage.
+4. When you have enough context (at minimum: name + role), save a profile to \`${memoryDir}/PROFILE.md\` using the write tool:
+
+\`\`\`markdown
+# User Profile
+- **Name**: ...
+- **Role**: ...
+- **Infrastructure**: ...
+- **Preferences**: ...
+\`\`\`
+
+Keep it to 2-3 exchanges max. If the user wants to skip and work directly, respect that — learn organically over time.`);
+  }
+
   const memoryFile = path.join(memoryDir, "MEMORY.md");
   if (fs.existsSync(memoryFile)) {
     const content = fs.readFileSync(memoryFile, "utf-8").trim();

@@ -4,6 +4,7 @@ import { SkillPanel } from './components/SkillPanel';
 import { SchedulePanel } from './components/SchedulePanel';
 import { History, X, Plus } from 'lucide-react';
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePilot, type PilotMessage } from '@/hooks/usePilot';
 
@@ -11,6 +12,7 @@ import { usePilot, type PilotMessage } from '@/hooks/usePilot';
 export function PilotPage() {
     const [isDrawerOpen, setIsDrawerOpen] = useState(false);
     const [panelMessage, setPanelMessage] = useState<PilotMessage | null>(null);
+    const navigate = useNavigate();
     const pilot = usePilot();
 
     // Track which tool content we've already auto-opened the panel for
@@ -201,6 +203,8 @@ export function PilotPage() {
                         dpChecklist={pilot.dpChecklist}
                         onHypothesesConfirmed={pilot.confirmHypotheses}
                         onExitDp={pilot.exitDpMode}
+                        systemStatus={pilot.systemStatus}
+                        onNavigateModels={() => navigate('/models')}
                     />
                 </div>
             </div>

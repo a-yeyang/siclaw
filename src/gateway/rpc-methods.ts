@@ -6,6 +6,7 @@
  */
 
 import crypto from "node:crypto";
+import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import type { AgentBoxManager } from "./agentbox/manager.js";
@@ -3545,6 +3546,55 @@ export function createRpcMethods(
     }
 
   }
+
+  // ─────────────────────────────────────────────────
+  // System Status (welcome page)
+  // ─────────────────────────────────────────────────
+
+  function detectEnv() {
+    const tryExec = (cmd: string) => {
+      try { return execSync(cmd, { timeout: 3000, stdio: "pipe" }).toString().trim(); }
+      catch { return null; }
+    };
+
+    const kubectlOk = tryExec("which kubectl") !== null;
+    const kubectlContext = kubectlOk ? tryExec("kubectl config current-context 2>/dev/null") : null;
+    const kubectlContextsRaw = kubectlOk ? tryExec("kubectl config get-contexts -o name 2>/dev/null") : null;
+    const kubectlContexts = kubectlContextsRaw?.split("\n").filter(Boolean) ?? [];
+
+    const toolChecks = ["helm", "terraform", "stern", "k9s", "docker", "kustomize", "argocd", "jq", "curl"];
+    const tools = toolChecks.filter(t => tryExec(`which ${t} 2>/dev/null`) !== null);
+
+    return { kubectl: kubectlOk, kubectlContext, kubectlContexts, tools };
+  }
+
+  methods.set("system.status", async (_params, context: RpcContext) => {
+    const userId = requireAuth(context);
+
+    // Models configured?
+    let hasModels = false;
+    if (modelConfigRepo) {
+      const models = await modelConfigRepo.listModels();
+      hasModels = models.length > 0;
+    }
+
+    // Session count
+    let sessionCount = 0;
+    if (chatRepo) {
+      const sessions = await chatRepo.listSessions(userId, 1);
+      sessionCount = sessions.length;
+    }
+
+    // PROFILE.md exists?
+    const userDataDir = process.env.SICLAW_USER_DATA_DIR || ".siclaw/user-data";
+    const profilePath = path.resolve(userDataDir, "memory", "PROFILE.md");
+    const hasProfile = fs.existsSync(profilePath);
+
+    // Environment detection
+    const env = detectEnv();
+
+    return { hasModels, hasProfile, sessionCount, env };
+  });
 
   // ─────────────────────────────────────────────────
   // System Config Methods (admin only)

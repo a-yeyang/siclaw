@@ -72,6 +72,18 @@ export interface InvestigationProgress {
     currentAction?: string;
 }
 
+export interface SystemStatus {
+    hasModels: boolean;
+    hasProfile: boolean;
+    sessionCount: number;
+    env: {
+        kubectl: boolean;
+        kubectlContext: string | null;
+        kubectlContexts: string[];
+        tools: string[];
+    };
+}
+
 /** Reduce individual progress events into accumulated investigation state */
 function reduceInvestigationProgress(
     state: InvestigationProgress,
@@ -282,6 +294,7 @@ export function usePilot() {
     const [isCompacting, setIsCompacting] = useState(false);
     const isAbortingRef = useRef(false);
     const [skills, setSkills] = useState<Skill[]>([]);
+    const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
     const [editingSkill, setEditingSkill] = useState<{ id: string; name: string } | null>(null);
     const [models, setModels] = useState<ModelInfo[]>([]);
     const [defaultModelRef, setDefaultModelRef] = useState<{ provider: string; modelId: string } | null>(null);
@@ -643,6 +656,14 @@ export function usePilot() {
         } catch (err) {
             console.error('Failed to load models:', err);
         }
+    }, [isConnected, sendRpc]);
+
+    const loadSystemStatus = useCallback(async () => {
+        if (!isConnected) return;
+        try {
+            const result = await sendRpc<SystemStatus>('system.status');
+            setSystemStatus(result);
+        } catch { /* ignore */ }
     }, [isConnected, sendRpc]);
 
     const fetchCurrentModel = useCallback(async () => {
@@ -1070,6 +1091,7 @@ export function usePilot() {
             loadSessions();
             loadSkills();
             loadModels();
+            loadSystemStatus();
             if (currentSessionKey) {
                 loadHistory(currentSessionKey).then(() => restoreDpProgress());
             }
@@ -1099,6 +1121,7 @@ export function usePilot() {
         contextUsage,
         isCompacting,
         skills,
+        systemStatus,
         editingSkill,
         pendingMessages,
         wsStatus: status,
