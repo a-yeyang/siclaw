@@ -6,8 +6,9 @@ import {
   SessionManager,
 } from "@mariozechner/pi-coding-agent";
 import { createSiclawSession } from "./core/agent-factory.js";
-import { loadConfig, getDefaultLlm } from "./core/config.js";
+import { loadConfig, getDefaultLlm, validateLlmConfig } from "./core/config.js";
 import { needsSetup, runInteractiveSetup } from "./cli-setup.js";
+import { saveSessionMemory } from "./memory/session-summarizer.js";
 import type { BrainType } from "./core/brain-session.js";
 
 // Parse arguments
@@ -31,6 +32,12 @@ if (forceSetup || needsSetup()) {
   }
 }
 
+// LLM config validation — warn early about missing keys
+const llmWarnings = validateLlmConfig();
+for (const w of llmWarnings) {
+  console.warn(`[siclaw] ⚠ ${w}`);
+}
+
 const debugMode = args.includes("--debug") || loadConfig().debug;
 
 // Session
@@ -39,7 +46,7 @@ const sessionManager = continueSession
   : SessionManager.create(process.cwd());
 
 // Create session via shared factory
-const { brain, session, modelFallbackMessage, customTools, skillsDirs } =
+const { brain, session, modelFallbackMessage, customTools, skillsDirs, memoryIndexer, mcpManager } =
   await createSiclawSession({ sessionManager, mode: "cli", brainType });
 
 // P1-1: Startup status summary
@@ -163,4 +170,29 @@ if (isPrintMode && initialMessage) {
     origGetDef(toolName) ?? customToolMap.get(toolName);
 
   await mode.run();
+}
+
+// -- Cleanup on exit --
+// Auto-save session memory (mirrors AgentBox release flow)
+if (session.sessionFile) {
+  const config = loadConfig();
+  const sessionDir = path.dirname(session.sessionFile);
+  const memoryDir = path.resolve(process.cwd(), config.paths.userDataDir, "memory");
+  try {
+    const saved = await saveSessionMemory({ sessionDir, memoryDir });
+    if (saved) {
+      console.log(`[siclaw] Session memory saved to ${path.basename(saved)}`);
+    }
+  } catch (err) {
+    console.warn(`[siclaw] Memory auto-save failed:`, err);
+  }
+}
+
+// Shutdown MCP connections
+if (mcpManager) {
+  try { await mcpManager.shutdown(); } catch { /* ignore */ }
+}
+// Close memory indexer
+if (memoryIndexer) {
+  try { memoryIndexer.close(); } catch { /* ignore */ }
 }

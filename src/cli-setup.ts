@@ -178,10 +178,37 @@ export async function runInteractiveSetup(): Promise<void> {
     const preset = PRESETS[presetIdx];
 
     // 2. API Key
-    const apiKey = await ask(rl, `  API Key: `);
-    if (!apiKey) {
+    const apiKeyInput = await ask(rl, `  API Key: `);
+    if (!apiKeyInput) {
       console.log("  API key is required. Setup aborted.");
       return;
+    }
+
+    // Offer env-var reference storage (recommended for security)
+    let apiKey: string;
+    if (!apiKeyInput.startsWith("$")) {
+      const storageChoice = await askSelect(rl, "  How to store the API key?", [
+        "As environment variable reference (recommended — key stays out of config files)",
+        "Store directly in settings.json (simple but less secure)",
+      ]);
+      if (storageChoice === 0) {
+        const envVarName = preset.key === "compatible"
+          ? "SICLAW_PROVIDER_API_KEY"
+          : `${preset.key.toUpperCase()}_API_KEY`;
+        const suggestedName = await ask(rl, `  Env var name [${envVarName}]: `);
+        const finalName = suggestedName || envVarName;
+        apiKey = `$${finalName}`;
+        console.log("");
+        console.log(`  Will store "$${finalName}" in config.`);
+        console.log(`  Make sure to set the env var before running siclaw:`);
+        console.log(`    export ${finalName}=${apiKeyInput}`);
+        console.log("");
+      } else {
+        apiKey = apiKeyInput;
+      }
+    } else {
+      // User already provided a $VAR reference
+      apiKey = apiKeyInput;
     }
 
     // 3. Base URL (only if needed or custom)

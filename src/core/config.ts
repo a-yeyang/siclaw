@@ -1,8 +1,9 @@
 /**
  * Unified configuration loader for AgentBox / TUI.
  *
- * All configuration is read from `.siclaw/config/settings.json`.
- * Zero process.env reads — everything comes from the file with sensible defaults.
+ * Configuration is read from `.siclaw/config/settings.json` with support for:
+ * - `$VAR` / `${VAR}` env-var references in apiKey / baseUrl fields
+ * - `SICLAW_LLM_*` runtime env-var overrides (highest priority)
  */
 
 import fs from "node:fs";
@@ -100,6 +101,84 @@ function deepMerge<T extends Record<string, unknown>>(base: T, override: Record<
 }
 
 // ---------------------------------------------------------------------------
+// Environment variable reference resolution
+// ---------------------------------------------------------------------------
+
+/**
+ * Expand `$VAR` and `${VAR}` references in a string to their process.env values.
+ * Unset variables resolve to "" with a console warning.
+ */
+function resolveEnvRef(value: string): string {
+  return value.replace(
+    /\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g,
+    (_, braced, bare) => {
+      const name = braced || bare;
+      const val = process.env[name];
+      if (val === undefined) console.warn(`[config] env ${name} is not set`);
+      return val ?? "";
+    },
+  );
+}
+
+/**
+ * Returns true if the value contains `$VAR` or `${VAR}` references.
+ */
+function hasEnvRef(value: string): boolean {
+  return /\$\{[A-Za-z_][A-Za-z0-9_]*\}|\$[A-Za-z_][A-Za-z0-9_]*/.test(value);
+}
+
+/**
+ * Resolve env-var references in provider apiKey / baseUrl fields,
+ * and in the embedding config.
+ */
+function resolveEnvRefs(config: SiclawConfig): void {
+  for (const provider of Object.values(config.providers)) {
+    if (provider.apiKey && hasEnvRef(provider.apiKey)) {
+      provider.apiKey = resolveEnvRef(provider.apiKey);
+    }
+    if (provider.baseUrl && hasEnvRef(provider.baseUrl)) {
+      provider.baseUrl = resolveEnvRef(provider.baseUrl);
+    }
+  }
+  if (config.embedding) {
+    if (config.embedding.apiKey && hasEnvRef(config.embedding.apiKey)) {
+      config.embedding.apiKey = resolveEnvRef(config.embedding.apiKey);
+    }
+    if (config.embedding.baseUrl && hasEnvRef(config.embedding.baseUrl)) {
+      config.embedding.baseUrl = resolveEnvRef(config.embedding.baseUrl);
+    }
+  }
+}
+
+/**
+ * Apply `SICLAW_LLM_*` environment variable overrides (highest priority).
+ *
+ * - `SICLAW_LLM_API_KEY`  → overrides the default provider's apiKey
+ * - `SICLAW_LLM_BASE_URL` → overrides the default provider's baseUrl
+ * - `SICLAW_LLM_MODEL`    → overrides the default modelId
+ */
+function applySiclawLlmOverrides(config: SiclawConfig): void {
+  const envApiKey = process.env.SICLAW_LLM_API_KEY;
+  const envBaseUrl = process.env.SICLAW_LLM_BASE_URL;
+  const envModel = process.env.SICLAW_LLM_MODEL;
+
+  if (!envApiKey && !envBaseUrl && !envModel) return;
+
+  // Determine the default provider name
+  const providerName =
+    config.default?.provider ?? Object.keys(config.providers)[0];
+  if (!providerName || !config.providers[providerName]) return;
+
+  const provider = config.providers[providerName];
+  if (envApiKey) provider.apiKey = envApiKey;
+  if (envBaseUrl) provider.baseUrl = envBaseUrl;
+  if (envModel) {
+    if (!config.default) config.default = { provider: providerName, modelId: envModel };
+    else config.default.modelId = envModel;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Singleton cache
 // ---------------------------------------------------------------------------
 
@@ -139,6 +218,12 @@ export function loadConfig(): SiclawConfig {
   }
 
   cached = deepMerge(DEFAULTS as unknown as Record<string, unknown>, fileConfig) as unknown as SiclawConfig;
+
+  // Resolve $VAR / ${VAR} references in provider & embedding fields
+  resolveEnvRefs(cached);
+
+  // SICLAW_LLM_* env overrides — highest priority
+  applySiclawLlmOverrides(cached);
 
   // Environment variable overrides (used by process-spawner / k8s-spawner)
   if (process.env.SICLAW_AGENTBOX_PORT) {
@@ -245,4 +330,44 @@ export function getEmbeddingConfig(): EmbeddingConfig | null {
   if (!baseUrl && !apiKey) return null;
 
   return { baseUrl, apiKey, model, dimensions };
+}
+
+/**
+ * Validate LLM configuration and return a list of warning messages.
+ * Returns an empty array if everything looks good.
+ */
+export function validateLlmConfig(): string[] {
+  const config = loadConfig();
+  const warnings: string[] = [];
+
+  const providerEntries = Object.entries(config.providers);
+  if (providerEntries.length === 0) {
+    warnings.push("No LLM providers configured. Run `siclaw --setup` or edit .siclaw/config/settings.json.");
+    return warnings;
+  }
+
+  const defaultProviderName = config.default?.provider ?? providerEntries[0][0];
+  const provider = config.providers[defaultProviderName];
+
+  if (!provider) {
+    warnings.push(`Default provider "${defaultProviderName}" not found in providers config.`);
+    return warnings;
+  }
+
+  if (!provider.apiKey) {
+    warnings.push(
+      `Provider "${defaultProviderName}" has no apiKey. ` +
+      `Set SICLAW_LLM_API_KEY or use "$VAR" syntax in settings.json.`,
+    );
+  }
+
+  if (!provider.baseUrl) {
+    warnings.push(`Provider "${defaultProviderName}" has no baseUrl configured.`);
+  }
+
+  if (provider.models.length === 0) {
+    warnings.push(`Provider "${defaultProviderName}" has no models configured.`);
+  }
+
+  return warnings;
 }
