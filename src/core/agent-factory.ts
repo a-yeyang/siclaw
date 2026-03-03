@@ -235,6 +235,15 @@ function buildAppendSystemPrompt(
     if (profileContent) {
       profileContent = truncateWithBudget(profileContent, 5_000);
       parts.push(`\n## User Profile\n\n${profileContent}`);
+
+      // Extract language preference and inject as behavioral instruction
+      const langMatch = profileContent.match(/\*\*Language\*\*:\s*(.+)/i);
+      if (langMatch) {
+        const lang = langMatch[1].trim();
+        if (lang && lang.toLowerCase() !== "tbd") {
+          parts.push(`\n## Language Override\n\nThis user's preferred language is **${lang}**. You MUST respond in ${lang} by default, even if the conversation has no prior messages. Only switch language if the user explicitly writes in a different language.`);
+        }
+      }
     }
   } else {
     // First-session: instruct agent to introduce itself and collect user context
