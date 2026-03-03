@@ -1,14 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
+import { readFile as fsReadFile, writeFile as fsWriteFile, access as fsAccess, mkdir as fsMkdir } from "node:fs/promises";
 import {
   createAgentSession,
   DefaultResourceLoader,
   SessionManager,
   AuthStorage,
   ModelRegistry,
-  readTool,
-  editTool,
-  writeTool,
+  createReadTool,
+  createEditTool,
+  createWriteTool,
   grepTool,
   findTool,
   lsTool,
@@ -270,6 +271,18 @@ This file controls whether the onboarding flow is shown. If you do not write it,
   return parts;
 }
 
+/** Throw if absolutePath is outside all allowed directories */
+function assertPathAllowed(absolutePath: string, allowedDirs: string[], operation: string): void {
+  const resolved = path.resolve(absolutePath);
+  const allowed = allowedDirs.some(dir => resolved === dir || resolved.startsWith(dir + path.sep));
+  if (!allowed) {
+    throw new Error(
+      `${operation} blocked: "${absolutePath}" is outside allowed directories. ` +
+      `Allowed: ${allowedDirs.join(", ")}`
+    );
+  }
+}
+
 export async function createSiclawSession(
   opts?: CreateSiclawSessionOpts,
 ): Promise<SiclawSessionResult> {
@@ -285,7 +298,6 @@ export async function createSiclawSession(
   const llmConfigRef: LlmConfigRef = {};
 
   const mode = opts?.mode ?? "web";
-  const tools = [readTool, editTool, writeTool, grepTool, findTool, lsTool];
 
   const customTools: ToolDefinition[] = [
     createRestrictedBashTool(kubeconfigRef),
@@ -351,6 +363,37 @@ export async function createSiclawSession(
   const skillsBase = path.resolve(cwd, config.paths.skillsDir);
   const userDataDir = path.resolve(cwd, config.paths.userDataDir);
   const memoryDir = path.join(userDataDir, "memory");
+
+  // -- Path-restricted file I/O tools --
+  // write/edit: only userDataDir (agent's runtime sandbox: memory, sessions)
+  // read: entire cwd tree (skills, memory, credentials)
+  const readAllowedDirs = [cwd];
+  const writeAllowedDirs = [userDataDir];
+
+  const tools = [
+    createReadTool(cwd, {
+      operations: {
+        readFile: async (p) => { assertPathAllowed(p, readAllowedDirs, "read"); return fsReadFile(p); },
+        access: async (p) => { assertPathAllowed(p, readAllowedDirs, "read"); return fsAccess(p, fs.constants.R_OK); },
+      },
+    }),
+    createEditTool(cwd, {
+      operations: {
+        readFile: async (p) => { assertPathAllowed(p, writeAllowedDirs, "edit"); return fsReadFile(p); },
+        writeFile: async (p, c) => { assertPathAllowed(p, writeAllowedDirs, "edit"); return fsWriteFile(p, c, "utf-8"); },
+        access: async (p) => { assertPathAllowed(p, writeAllowedDirs, "edit"); return fsAccess(p, fs.constants.R_OK | fs.constants.W_OK); },
+      },
+    }),
+    createWriteTool(cwd, {
+      operations: {
+        writeFile: async (p, c) => { assertPathAllowed(p, writeAllowedDirs, "write"); return fsWriteFile(p, c, "utf-8"); },
+        mkdir: async (d) => { assertPathAllowed(d, writeAllowedDirs, "write"); await fsMkdir(d, { recursive: true }); },
+      },
+    }),
+    grepTool,
+    findTool,
+    lsTool,
+  ];
 
   // Skills: prefer .skills-prod/.skills-dev + .platform-web/.platform-channel (gateway mode),
   // fall back to scope dirs (CLI mode)
