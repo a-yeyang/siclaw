@@ -294,7 +294,7 @@ export class CertificateManager {
 
     if (opts.extendedKeyUsage) {
       extensions.push({
-        name: "extendedKeyUsage",
+        name: "extKeyUsage",
         clientAuth: opts.extendedKeyUsage.includes("clientAuth"),
         serverAuth: opts.extendedKeyUsage.includes("serverAuth"),
       });
