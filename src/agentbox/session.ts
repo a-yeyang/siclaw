@@ -15,7 +15,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { AgentSession } from "@mariozechner/pi-coding-agent";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
-import { createSiclawSession, type KubeconfigRef, type LlmConfigRef, type LanguageRef, type SessionMode } from "../core/agent-factory.js";
+import { createSiclawSession, type KubeconfigRef, type LlmConfigRef, type SessionMode } from "../core/agent-factory.js";
 import type { BrainSession, BrainType } from "../core/brain-session.js";
 import type { McpClientManager } from "../core/mcp-client.js";
 import { createMemoryIndexer, type MemoryIndexer } from "../memory/index.js";
@@ -48,8 +48,6 @@ export interface ManagedSession {
   kubeconfigRef: KubeconfigRef;
   /** Mutable LLM config ref for deep_search sub-agents — updated by gateway prompt handler */
   llmConfigRef: LlmConfigRef;
-  /** Mutable user language preference — updated per-request by gateway prompt handler */
-  languageRef: LanguageRef;
   /** Whether the current prompt was aborted (prevents empty response retry) */
   _aborted: boolean;
   /** Mutable skill dirs array passed to DefaultResourceLoader — update + reload to switch */
@@ -194,7 +192,6 @@ export class AgentBoxSessionManager {
     const kubeconfigRef: KubeconfigRef = {
       credentialsDir: path.resolve(process.cwd(), config.paths.credentialsDir),
     };
-    const languageRef: LanguageRef = {};
     const effectiveMode = mode ?? "web";
     const effectiveBrainType = brainType ?? "pi-agent";
     const result = await createSiclawSession({
@@ -203,7 +200,6 @@ export class AgentBoxSessionManager {
       mode: effectiveMode,
       brainType: effectiveBrainType,
       memoryIndexer: this._sharedMemoryIndexer ?? undefined,
-      languageRef,
     });
 
     // New session: re-sync memory index to pick up files from previous sessions
@@ -228,7 +224,6 @@ export class AgentBoxSessionManager {
       _bufferUnsub: null,
       kubeconfigRef,
       llmConfigRef: result.llmConfigRef,
-      languageRef: result.languageRef,
       _aborted: false,
       skillsDirs: result.skillsDirs,
       mode: effectiveMode,

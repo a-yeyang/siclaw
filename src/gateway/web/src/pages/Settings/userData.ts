@@ -8,7 +8,6 @@ export type UserProfile = {
     role: string;
     initials: string;
     avatarBg: string;
-    language?: string;
 };
 
 // Default initial state
@@ -69,7 +68,6 @@ export async function rpcGetProfile(sendRpc: RpcSendFn): Promise<UserProfile | n
             role: p.role || '',
             initials: computeInitials(name),
             avatarBg: p.avatarBg || 'bg-primary-100',
-            language: p.language || undefined,
         };
     } catch {
         return null;

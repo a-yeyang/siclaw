@@ -63,11 +63,6 @@ export interface LlmConfigRef {
   api?: string;
 }
 
-/** Mutable ref to user language preference (updated per-request by gateway prompt handler) */
-export interface LanguageRef {
-  language?: string;
-}
-
 export interface CreateSiclawSessionOpts {
   sessionManager?: SessionManager;
   kubeconfigRef?: KubeconfigRef;
@@ -79,8 +74,10 @@ export interface CreateSiclawSessionOpts {
   systemPromptAppend?: string;
   /** Pre-initialized shared memory indexer (AgentBox level) — skips per-session creation */
   memoryIndexer?: MemoryIndexer;
-  /** Mutable language ref — updated per-request, read by system prompt builder */
-  languageRef?: LanguageRef;
+  /** Pre-initialized shared MCP client manager (AgentBox level) — skips per-session init */
+  mcpManager?: McpClientManager;
+  /** Pre-resolved MCP tools from shared mcpManager — avoids re-discovery */
+  mcpTools?: ToolDefinition[];
 }
 
 export interface SiclawSessionResult {
@@ -91,8 +88,6 @@ export interface SiclawSessionResult {
   kubeconfigRef: KubeconfigRef;
   /** Mutable ref to LLM config for deep_search sub-agents */
   llmConfigRef: LlmConfigRef;
-  /** Mutable ref to user language preference */
-  languageRef: LanguageRef;
   /** Mutable skill dirs array — update contents + call session.reload() to switch */
   skillsDirs: string[];
   mode: SessionMode;
@@ -259,6 +254,7 @@ After the user's FIRST reply that contains ANY identifying info (name, role, tea
 - **Role**: ...
 - **Infrastructure**: ...
 - **Preferences**: ...
+- **Language**: ... (the language the user communicates in)
 \`\`\`
 
 This file controls whether the onboarding flow is shown. If you do not write it, the user will be stuck in the onboarding loop forever.`);
@@ -311,8 +307,6 @@ export async function createSiclawSession(
 
   const kubeconfigRef: KubeconfigRef = opts?.kubeconfigRef ?? {};
   const llmConfigRef: LlmConfigRef = {};
-  const languageRef: LanguageRef = opts?.languageRef ?? {};
-
   const mode = opts?.mode ?? "web";
 
   const customTools: ToolDefinition[] = [
@@ -441,7 +435,7 @@ export async function createSiclawSession(
 
   const loader = new DefaultResourceLoader({
     cwd,
-    systemPromptOverride: () => buildSreSystemPrompt(memoryDir, languageRef.language),
+    systemPromptOverride: () => buildSreSystemPrompt(memoryDir),
     appendSystemPromptOverride: () => {
       const parts = buildAppendSystemPrompt(skillsBase, getUserSkillDirName, getPlatformSkillDirName, memoryDir);
       if (workspaceSystemPromptAppend) {
@@ -481,7 +475,7 @@ export async function createSiclawSession(
       createEndInvestigationTool(dpState),
     );
 
-    const systemPrompt = buildSreSystemPrompt(memoryDir, languageRef.language);
+    const systemPrompt = buildSreSystemPrompt(memoryDir);
 
     // Build the same append content that pi-agent gets via appendSystemPromptOverride
     const appendParts = buildAppendSystemPrompt(skillsBase, getUserSkillDirName, getPlatformSkillDirName, memoryDir);
@@ -519,7 +513,6 @@ export async function createSiclawSession(
       customTools: sdkTools,
       kubeconfigRef,
       llmConfigRef,
-      languageRef,
       skillsDirs,
       mode,
       mcpManager,
@@ -570,5 +563,5 @@ export async function createSiclawSession(
   });
 
   const brain: BrainSession = new PiAgentBrain(session);
-  return { brain, session, modelFallbackMessage, customTools, kubeconfigRef, llmConfigRef, languageRef, skillsDirs, mode, mcpManager, memoryIndexer };
+  return { brain, session, modelFallbackMessage, customTools, kubeconfigRef, llmConfigRef, skillsDirs, mode, mcpManager, memoryIndexer };
 }

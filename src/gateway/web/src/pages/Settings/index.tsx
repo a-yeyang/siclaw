@@ -1,13 +1,10 @@
 import {
     User,
-    Globe,
     LogOut,
-    ChevronDown,
     Search,
     Hash,
     KeyRound,
     Loader2,
-    Check,
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { getUser, updateUser, rpcUpdateProfile } from './userData';
@@ -21,8 +18,6 @@ export function SettingsPage() {
     const { sendRpc, isConnected } = useWebSocket();
     const authUser = getCurrentUser();
     const [isSsoUser, setIsSsoUser] = useState(true); // default true to hide form until loaded
-    const [language, setLanguage] = useState(user.language || 'en');
-    const [langOpen, setLangOpen] = useState(false);
 
     // Load SSO status
     const hasLoadedRef = useRef(false);
@@ -39,7 +34,6 @@ export function SettingsPage() {
         const handleUpdate = () => {
             const u = getUser();
             setUser(u);
-            if (u.language) setLanguage(u.language);
         };
         window.addEventListener('user-profile-updated', handleUpdate);
         return () => window.removeEventListener('user-profile-updated', handleUpdate);
@@ -104,25 +98,6 @@ export function SettingsPage() {
                         </button>
                     </div>
 
-                    {/* Settings Group: Preferences */}
-                    <div className="space-y-3">
-                        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-1">Preferences</h3>
-                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                            <LanguageSetting
-                                language={language}
-                                open={langOpen}
-                                onToggle={() => setLangOpen(!langOpen)}
-                                onChange={async (code) => {
-                                    setLanguage(code);
-                                    setLangOpen(false);
-                                    try {
-                                        await rpcUpdateProfile(sendRpc, { language: code });
-                                    } catch { /* local update already applied */ }
-                                }}
-                            />
-                        </div>
-                    </div>
-
                     {/* Change Password — only for non-SSO users */}
                     {!isSsoUser && (
                         <div className="space-y-3">
@@ -147,60 +122,6 @@ export function SettingsPage() {
                     </div>
                 </div>
             </div>
-        </div>
-    );
-}
-
-const LANGUAGES = [
-    { code: 'en', label: 'English' },
-    { code: 'zh-CN', label: '简体中文' },
-];
-
-function LanguageSetting({
-    language,
-    open,
-    onToggle,
-    onChange,
-}: {
-    language: string;
-    open: boolean;
-    onToggle: () => void;
-    onChange: (code: string) => void;
-}) {
-    const current = LANGUAGES.find((l) => l.code === language) ?? LANGUAGES[0];
-    return (
-        <div className="relative">
-            <button
-                onClick={onToggle}
-                className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors group text-left"
-            >
-                <div className="flex items-center gap-4">
-                    <div className="text-gray-400 group-hover:text-primary-600 transition-colors">
-                        <Globe className="w-5 h-5" />
-                    </div>
-                    <span className="text-sm font-medium text-gray-700">Language</span>
-                </div>
-                <div className="flex items-center gap-3">
-                    <span className="text-sm text-gray-500">{current.label}</span>
-                    <ChevronDown className={`w-4 h-4 text-gray-300 group-hover:text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
-                </div>
-            </button>
-            {open && (
-                <div className="border-t border-gray-100 bg-gray-50">
-                    {LANGUAGES.map((lang) => (
-                        <button
-                            key={lang.code}
-                            onClick={() => onChange(lang.code)}
-                            className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-100 transition-colors text-left"
-                        >
-                            <span className="text-sm text-gray-700 pl-9">{lang.label}</span>
-                            {lang.code === language && (
-                                <Check className="w-4 h-4 text-primary-600" />
-                            )}
-                        </button>
-                    ))}
-                </div>
-            )}
         </div>
     );
 }

@@ -536,17 +536,8 @@ export function createRpcMethods(
     });
     const client = new AgentBoxClient(handle.endpoint);
 
-    // Resolve user language preference for model responses
-    let userLanguage: string | undefined;
-    if (userRepo) {
-      try {
-        const profile = await userRepo.getProfile(userId);
-        if (profile?.language) userLanguage = profile.language;
-      } catch { /* ignore — language is best-effort */ }
-    }
-
     // Send prompt
-    const result = await client.prompt({ sessionId, text: message, modelProvider, modelId, brainType, modelConfig, credentials, userLanguage });
+    const result = await client.prompt({ sessionId, text: message, modelProvider, modelId, brainType, modelConfig, credentials });
     console.log(`[rpc] prompt sent → sessionId=${result.sessionId}`);
 
     // Cancel previous SSE subscription
@@ -2234,7 +2225,6 @@ export function createRpcMethods(
       name: params.name as string | undefined,
       role: params.role as string | undefined,
       avatarBg: params.avatarBg as string | undefined,
-      language: params.language as string | undefined,
     });
 
     return { status: "updated" };
