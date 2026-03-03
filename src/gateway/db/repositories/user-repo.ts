@@ -87,6 +87,7 @@ export class UserRepository {
       name?: string;
       role?: string;
       avatarBg?: string;
+      language?: string;
     },
   ) {
     const existing = await this.getProfile(userId);

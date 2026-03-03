@@ -28,6 +28,8 @@ export interface PromptOptions {
     manifest: Array<{ name: string; type: string; description?: string | null; files: string[]; metadata?: Record<string, unknown> }>;
     files: Array<{ name: string; content: string; mode?: number }>;
   };
+  /** User language preference for model responses (e.g. "zh-CN") */
+  userLanguage?: string;
   /** Full provider config for dynamic registration (from gateway DB) */
   modelConfig?: {
     name: string;

@@ -35,6 +35,7 @@ export const userProfiles = sqliteTable("user_profiles", {
   email: text("email"),
   location: text("location"),
   avatarBg: text("avatar_bg"),
+  language: text("language"),  // e.g. "en", "zh-CN"
 });
 
 // ─── Sessions ────────────────────────────────────────

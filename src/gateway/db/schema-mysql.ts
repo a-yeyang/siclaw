@@ -38,6 +38,7 @@ export const userProfiles = mysqlTable("user_profiles", {
   email: varchar("email", { length: 255 }),
   location: varchar("location", { length: 255 }),
   avatarBg: varchar("avatar_bg", { length: 50 }),
+  language: varchar("language", { length: 10 }),
 });
 
 // ─── Sessions ────────────────────────────────────────
