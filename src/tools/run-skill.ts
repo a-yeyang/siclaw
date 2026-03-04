@@ -10,6 +10,8 @@ import {
   listSkillScripts,
   listAllSkillsWithScripts,
 } from "./script-resolver.js";
+import { resolveKubeconfigPath } from "./kubeconfig-resolver.js";
+import { sanitizeEnv } from "./sanitize-env.js";
 
 interface RunSkillParams {
   skill: string;
@@ -121,10 +123,10 @@ Read the skill's SKILL.md first to understand required parameters and usage.`,
           shell: "/bin/bash",
           detached: true, // make child a process group leader for clean group kill
           env: {
-            ...process.env,
+            ...sanitizeEnv(process.env as Record<string, string>),
             SICLAW_DEBUG_IMAGE: loadConfig().debugImage,
             ...(kubeconfigRef?.credentialsDir ? { SICLAW_CREDENTIALS_DIR: kubeconfigRef.credentialsDir } : {}),
-            KUBECONFIG: "/dev/null",
+            KUBECONFIG: resolveKubeconfigPath(kubeconfigRef?.credentialsDir) || "/dev/null",
           },
         };
         const child = exec(command, execOpts as any);
