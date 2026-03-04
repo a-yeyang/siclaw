@@ -181,7 +181,7 @@ export class K8sSpawner implements BoxSpawner {
                 name: "skills-pv",
                 mountPath: "/home/agentbox/.credentials",
                 subPath: `user/${userId}/.ws-${workspaceId}/.credentials`,
-                readOnly: true,
+                readOnly: false,
               },
               // NOTE: These sub-path mounts coexist with the optional Secret-based
               // kubeconfig mount at /home/agentbox/.kube — K8s allows more-specific
