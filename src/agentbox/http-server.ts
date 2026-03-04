@@ -13,7 +13,7 @@ import type { BrainType } from "../core/brain-session.js";
 import { hasOpenAIProvider, ensureProxy } from "../core/llm-proxy.js";
 import { deepSearchEvents, deepSearchGate, HYPOTHESES_CONFIRMED_SENTINEL } from "../tools/deep-search/events.js";
 import { createChecklist, buildActivationMessage } from "../tools/dp-tools.js";
-import { loadConfig } from "../core/config.js";
+import { loadConfig, reloadConfig } from "../core/config.js";
 
 type RequestHandler = (
   req: http.IncomingMessage,
@@ -565,6 +565,52 @@ export function createHttpServer(sessionManager: AgentBoxSessionManager): http.S
       }
     }
     sendJson(res, 200, { ok: true, reloaded: sessions.length - errors.length, errors });
+  });
+
+  /**
+   * POST /api/reload-mcp - hot-reload MCP servers config
+   *
+   * Re-fetches MCP config from Gateway, merges with local config, and updates
+   * the cached config so subsequent sessions pick up the new MCP servers.
+   */
+  addRoute("POST", "/api/reload-mcp", async (_req, res) => {
+    console.log(`[agentbox-http] Reloading MCP config...`);
+    try {
+      const config = loadConfig();
+      const merged: Record<string, unknown> = {};
+
+      // 1. Local config as base
+      const localConfigPath = path.resolve(process.cwd(), "config", "mcp-servers.json");
+      try {
+        if (fs.existsSync(localConfigPath)) {
+          const local = JSON.parse(fs.readFileSync(localConfigPath, "utf-8"));
+          if (local?.mcpServers) Object.assign(merged, local.mcpServers);
+        }
+      } catch { /* ignore local parse errors */ }
+
+      // 2. Gateway overlay
+      if (config.server.gatewayUrl) {
+        const resp = await fetch(`${config.server.gatewayUrl}/api/internal/mcp-servers`, {
+          signal: AbortSignal.timeout(5000),
+        });
+        if (resp.ok) {
+          const remote = await resp.json() as { mcpServers?: Record<string, unknown> };
+          if (remote?.mcpServers) Object.assign(merged, remote.mcpServers);
+        }
+      }
+
+      // 3. Write merged config and reload
+      const mcpDir = process.env.SICLAW_MCP_DIR || path.resolve(process.cwd(), ".siclaw", "mcp");
+      if (!fs.existsSync(mcpDir)) fs.mkdirSync(mcpDir, { recursive: true });
+      fs.writeFileSync(path.join(mcpDir, "mcp-servers.json"), JSON.stringify({ mcpServers: merged }, null, 2) + "\n");
+      reloadConfig();
+
+      console.log(`[agentbox-http] MCP config reloaded: ${Object.keys(merged).length} servers [${Object.keys(merged).join(", ")}]`);
+      sendJson(res, 200, { ok: true, servers: Object.keys(merged).length });
+    } catch (err: any) {
+      console.error(`[agentbox-http] MCP reload failed:`, err);
+      sendJson(res, 500, { ok: false, error: err.message });
+    }
   });
 
   /**

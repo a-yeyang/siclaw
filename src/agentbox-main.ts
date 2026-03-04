@@ -45,6 +45,49 @@ async function main() {
     }
   }
 
+  // Merge MCP servers: local config as base, Gateway DB entries overlay (same name → Gateway wins)
+  {
+    // 1. Local config as base layer
+    const localConfigPath = path.resolve(process.cwd(), "config", "mcp-servers.json");
+    const merged: Record<string, unknown> = {};
+    try {
+      if (fs.existsSync(localConfigPath)) {
+        const local = JSON.parse(fs.readFileSync(localConfigPath, "utf-8"));
+        if (local?.mcpServers) {
+          Object.assign(merged, local.mcpServers);
+          console.log(`[agentbox] Local MCP config: ${Object.keys(local.mcpServers).length} servers`);
+        }
+      }
+    } catch (err) {
+      console.warn(`[agentbox] Failed to read local MCP config:`, err);
+    }
+
+    // 2. Gateway overlay (same name overwrites local)
+    if (config.server.gatewayUrl) {
+      try {
+        const resp = await fetch(`${config.server.gatewayUrl}/api/internal/mcp-servers`, {
+          signal: AbortSignal.timeout(5000),
+        });
+        if (resp.ok) {
+          const remote = await resp.json() as { mcpServers?: Record<string, unknown> };
+          if (remote?.mcpServers) {
+            Object.assign(merged, remote.mcpServers);
+            console.log(`[agentbox] Gateway MCP config: ${Object.keys(remote.mcpServers).length} servers`);
+          }
+        }
+      } catch (err) {
+        console.warn(`[agentbox] Failed to fetch MCP config from Gateway:`, err);
+      }
+    }
+
+    // 3. Write merged result for loadMcpServersConfig to pick up
+    const mcpDir = process.env.SICLAW_MCP_DIR || path.resolve(process.cwd(), ".siclaw", "mcp");
+    if (!fs.existsSync(mcpDir)) fs.mkdirSync(mcpDir, { recursive: true });
+    fs.writeFileSync(path.join(mcpDir, "mcp-servers.json"), JSON.stringify({ mcpServers: merged }, null, 2) + "\n");
+    if (!process.env.SICLAW_MCP_DIR) process.env.SICLAW_MCP_DIR = mcpDir;
+    console.log(`[agentbox] Merged MCP config: ${Object.keys(merged).length} servers [${Object.keys(merged).join(", ")}]`);
+  }
+
   const skillsDir = path.resolve(process.cwd(), config.paths.skillsDir);
   const userDataDir = path.resolve(process.cwd(), config.paths.userDataDir);
   console.log(`[agentbox] cwd: ${process.cwd()}`);

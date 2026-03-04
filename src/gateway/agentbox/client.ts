@@ -138,6 +138,16 @@ export class AgentBoxClient {
   }
 
   /**
+   * Hot-reload MCP servers config — notify AgentBox to re-fetch from Gateway
+   */
+  async reloadMcp(): Promise<{ ok: boolean; servers: number }> {
+    const resp = await this.fetch("/api/reload-mcp", {
+      method: "POST",
+    });
+    return resp.json();
+  }
+
+  /**
    * Get context usage
    */
   async getContextUsage(sessionId: string): Promise<ContextUsageResponse> {

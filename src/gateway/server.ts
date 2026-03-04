@@ -18,6 +18,8 @@ import { PermissionRepository } from "./db/repositories/permission-repo.js";
 import { UserRepository } from "./db/repositories/user-repo.js";
 import { ModelConfigRepository } from "./db/repositories/model-config-repo.js";
 import { SystemConfigRepository } from "./db/repositories/system-config-repo.js";
+import { McpServerRepository } from "./db/repositories/mcp-server-repo.js";
+import { loadMcpServersConfig } from "../core/mcp-client.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Static files: web React build
@@ -775,6 +777,51 @@ export async function startGateway(opts: StartGatewayOptions): Promise<GatewaySe
           res.end(JSON.stringify(settings));
         } catch (err) {
           console.error("[gateway] settings export error:", err);
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Internal server error" }));
+        }
+      })();
+      return;
+    }
+
+    // Internal MCP servers endpoint: GET /api/internal/mcp-servers
+    // Returns merged MCP config (local seed + DB enabled entries) for AgentBox consumption
+    if (url === "/api/internal/mcp-servers" && method === "GET") {
+      (async () => {
+        try {
+          // 1. Local config as base layer
+          const merged: Record<string, any> = {};
+          const localConfig = loadMcpServersConfig(undefined, { localOnly: true });
+          if (localConfig?.mcpServers) {
+            for (const [name, cfg] of Object.entries(localConfig.mcpServers)) {
+              merged[name] = cfg;
+            }
+          }
+
+          // 2. DB overlay (enabled overwrites local; disabled removes)
+          if (db) {
+            const mcpRepo = new McpServerRepository(db);
+            const rows = await mcpRepo.list();
+            for (const row of rows) {
+              if (!row.enabled) {
+                delete merged[row.name];
+                continue;
+              }
+              const cfg: Record<string, any> = {};
+              if (row.transport) cfg.transport = row.transport;
+              if (row.url) cfg.url = row.url;
+              if (row.command) cfg.command = row.command;
+              if (row.argsJson) cfg.args = row.argsJson;
+              if (row.envJson) cfg.env = row.envJson;
+              if (row.headersJson) cfg.headers = row.headersJson;
+              merged[row.name] = cfg;
+            }
+          }
+
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ mcpServers: merged }));
+        } catch (err) {
+          console.error("[gateway] mcp-servers export error:", err);
           res.writeHead(500, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Internal server error" }));
         }
