@@ -206,6 +206,18 @@ export function validateKubectlInPipeline(commands: string[]): string | null {
       const execCheck = validateExecCommand(args);
       if (execCheck) return execCheck;
     }
+
+    // Block "kubectl config view --raw" — leaks full kubeconfig with certs/tokens
+    if (subcommand === "config") {
+      const configSub = args.filter((a) => !a.startsWith("-"));
+      const hasView = configSub.includes("view");
+      const hasRaw = args.includes("--raw");
+      if (hasView && hasRaw) {
+        return JSON.stringify({
+          error: "kubectl config view --raw is not allowed — it exposes credentials.",
+        }, null, 2);
+      }
+    }
   }
   return null;
 }
@@ -414,10 +426,12 @@ Do NOT use for non-kubectl tasks (file editing, package management, etc.).`,
         }
       }
 
-      // Block reading sensitive credential/config files via any file-reading command
+      // Block reading sensitive credential/config files via any file-reading command.
+      // Also catches $KUBECONFIG / ${KUBECONFIG} shell variable expansion.
       const SENSITIVE_PATH_RE = [
         /\.siclaw\/config\/settings\.json/,
         /\.siclaw\/credentials\//,
+        /\$\{?KUBECONFIG\}?/,
       ];
       const FILE_READING_CMDS = ["cat", "head", "tail", "less", "more", "grep", "awk", "gawk"];
       for (const cmd of commands) {

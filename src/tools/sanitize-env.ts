@@ -41,9 +41,14 @@ const BLOCKED_SUFFIXES = [
   "_CREDENTIALS",
 ];
 
+/** SICLAW_* vars that are safe to pass through (non-secret config). */
+const SICLAW_SAFE = new Set([
+  "SICLAW_DEBUG_IMAGE",
+  "SICLAW_CREDENTIALS_DIR",
+]);
+
 /** Prefixes to always allow even if they match a suffix pattern. */
 const ALLOW_PREFIXES = [
-  "SICLAW_",       // our own non-secret config vars
   "KUBECONFIG",    // handled separately
   "PATH",
   "HOME",
@@ -64,6 +69,11 @@ const ALLOW_PREFIXES = [
 
 function isSensitive(name: string): boolean {
   const upper = name.toUpperCase();
+
+  // SICLAW_* vars: only allow explicitly safe ones
+  if (upper.startsWith("SICLAW_")) {
+    return !SICLAW_SAFE.has(upper);
+  }
 
   // Explicit allow-list takes precedence
   if (ALLOW_PREFIXES.some((p) => upper.startsWith(p))) return false;

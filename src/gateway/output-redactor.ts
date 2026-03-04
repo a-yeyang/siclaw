@@ -5,7 +5,7 @@
  * cluster internal names) and replaces them with [REDACTED] in outbound text
  * sent to the user via WebSocket.
  *
- * Only applied to the WS stream — DB stores the original data for debugging.
+ * Applied to all outbound surfaces: WS stream, channel-bridge, and DB storage.
  */
 
 export interface RedactionConfig {

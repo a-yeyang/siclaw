@@ -609,9 +609,9 @@ export function createRpcMethods(
             dbMessageId = await chatRepo.appendMessage({
               sessionId: result.sessionId,
               role: "tool",
-              content: text,
+              content: redactText(text, redactionConfig),
               toolName,
-              toolInput: pendingToolInput || undefined,
+              toolInput: pendingToolInput ? redactText(pendingToolInput, redactionConfig) : undefined,
             });
             await chatRepo.incrementMessageCount(result.sessionId);
             pendingToolInput = "";
@@ -677,12 +677,12 @@ export function createRpcMethods(
                 assistantContent += ame.delta;
               }
             } else if (eventType === "message_end") {
-              // Save complete assistant message
+              // Save complete assistant message (redacted)
               if (assistantContent) {
                 await chatRepo.appendMessage({
                   sessionId: result.sessionId,
                   role: "assistant",
-                  content: assistantContent,
+                  content: redactText(assistantContent, redactionConfig),
                 });
                 await chatRepo.incrementMessageCount(result.sessionId);
                 assistantContent = "";
