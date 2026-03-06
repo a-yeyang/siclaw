@@ -1,4 +1,19 @@
 import { BookOpen, SearchCode, Cpu, Timer, CheckCircle2, Circle, ArrowRight, KeyRound } from 'lucide-react';
+
+function SlackIcon() {
+    return (
+        <svg width="12" height="12" viewBox="0 0 122 122" xmlns="http://www.w3.org/2000/svg">
+            <path d="M25.7 77.5a12.8 12.8 0 1 1-25.7 0 12.8 12.8 0 0 1 25.7 0zm6.4 0a19.2 19.2 0 0 0-19.2-19.2H6.4a19.2 19.2 0 0 0 0 38.4h6.5a19.2 19.2 0 0 0 19.2-19.2z" fill="#E01E5A"/>
+            <path d="M44.5 96.3a12.8 12.8 0 1 1 0 25.7 12.8 12.8 0 0 1 0-25.7zm0-6.4a19.2 19.2 0 0 0-19.2 19.2v6.5a19.2 19.2 0 0 0 38.4 0v-6.5a19.2 19.2 0 0 0-19.2-19.2z" fill="#E01E5A"/>
+            <path d="M96.3 44.5a12.8 12.8 0 1 1 25.7 0 12.8 12.8 0 0 1-25.7 0zm-6.4 0a19.2 19.2 0 0 0 19.2 19.2h6.5a19.2 19.2 0 0 0 0-38.4h-6.5a19.2 19.2 0 0 0-19.2 19.2z" fill="#2EB67D"/>
+            <path d="M77.5 25.7a12.8 12.8 0 1 1 0-25.7 12.8 12.8 0 0 1 0 25.7zm0 6.4a19.2 19.2 0 0 0 19.2-19.2V6.4a19.2 19.2 0 0 0-38.4 0v6.5a19.2 19.2 0 0 0 19.2 19.2z" fill="#2EB67D"/>
+            <path d="M25.7 44.5a12.8 12.8 0 1 1-25.7 0 12.8 12.8 0 0 1 25.7 0zm6.4 0a19.2 19.2 0 0 0-19.2-19.2H6.4a19.2 19.2 0 0 0 0 38.4h6.5a19.2 19.2 0 0 0 19.2-19.2z" fill="#ECB22E"/>
+            <path d="M44.5 25.7a12.8 12.8 0 1 1 0-25.7 12.8 12.8 0 0 1 0 25.7zm0 6.4a19.2 19.2 0 0 0 19.2-19.2V6.4a19.2 19.2 0 0 0-38.4 0v6.5a19.2 19.2 0 0 0 19.2 19.2z" fill="#ECB22E"/>
+            <path d="M96.3 77.5a12.8 12.8 0 1 1 25.7 0 12.8 12.8 0 0 1-25.7 0zm-6.4 0a19.2 19.2 0 0 0 19.2 19.2h6.5a19.2 19.2 0 0 0 0-38.4h-6.5a19.2 19.2 0 0 0-19.2 19.2z" fill="#36C5F0"/>
+            <path d="M77.5 96.3a12.8 12.8 0 1 1 0 25.7 12.8 12.8 0 0 1 0-25.7zm0-6.4a19.2 19.2 0 0 0-19.2 19.2v6.5a19.2 19.2 0 0 0 38.4 0v-6.5a19.2 19.2 0 0 0-19.2-19.2z" fill="#36C5F0"/>
+        </svg>
+    );
+}
 import type { SystemStatus } from '@/hooks/usePilot';
 
 export interface WelcomeAreaProps {
@@ -137,6 +152,37 @@ export function WelcomeArea({ systemStatus, onSendPrompt, onNavigateModels, onNa
             {!isFirstTime && hasCredentials && (
                 <CredentialsSummary credentials={credentials} />
             )}
+
+            {/* ── Community Links ── */}
+            <div className="flex items-center gap-4 text-xs text-gray-400">
+                <a
+                    href="https://github.com/scitix/siclaw"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:text-gray-600 transition-colors"
+                >
+                    GitHub
+                </a>
+                <span className="text-gray-200">·</span>
+                <a
+                    href="https://join.slack.com/t/siclaw-scitix/shared_invite/zt-3rrsoc2ic-JIfbfvT1_04sqgQorSRfmw"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 hover:text-gray-600 transition-colors"
+                >
+                    <SlackIcon />
+                    Slack
+                </a>
+                <span className="text-gray-200">·</span>
+                <a
+                    href="https://siclaw.ai"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:text-gray-600 transition-colors"
+                >
+                    siclaw.ai
+                </a>
+            </div>
 
             {/* ── Suggested Prompts: shown on every empty session ── */}
             {systemStatus && (

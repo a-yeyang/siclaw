@@ -3,6 +3,21 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Command, LogIn, Loader2, AlertCircle, ExternalLink } from 'lucide-react';
 import { login } from '../../auth';
 
+function SlackIcon() {
+    return (
+        <svg width="14" height="14" viewBox="0 0 122 122" xmlns="http://www.w3.org/2000/svg">
+            <path d="M25.7 77.5a12.8 12.8 0 1 1-25.7 0 12.8 12.8 0 0 1 25.7 0zm6.4 0a19.2 19.2 0 0 0-19.2-19.2H6.4a19.2 19.2 0 0 0 0 38.4h6.5a19.2 19.2 0 0 0 19.2-19.2z" fill="#E01E5A"/>
+            <path d="M44.5 96.3a12.8 12.8 0 1 1 0 25.7 12.8 12.8 0 0 1 0-25.7zm0-6.4a19.2 19.2 0 0 0-19.2 19.2v6.5a19.2 19.2 0 0 0 38.4 0v-6.5a19.2 19.2 0 0 0-19.2-19.2z" fill="#E01E5A"/>
+            <path d="M96.3 44.5a12.8 12.8 0 1 1 25.7 0 12.8 12.8 0 0 1-25.7 0zm-6.4 0a19.2 19.2 0 0 0 19.2 19.2h6.5a19.2 19.2 0 0 0 0-38.4h-6.5a19.2 19.2 0 0 0-19.2 19.2z" fill="#2EB67D"/>
+            <path d="M77.5 25.7a12.8 12.8 0 1 1 0-25.7 12.8 12.8 0 0 1 0 25.7zm0 6.4a19.2 19.2 0 0 0 19.2-19.2V6.4a19.2 19.2 0 0 0-38.4 0v6.5a19.2 19.2 0 0 0 19.2 19.2z" fill="#2EB67D"/>
+            <path d="M25.7 44.5a12.8 12.8 0 1 1-25.7 0 12.8 12.8 0 0 1 25.7 0zm6.4 0a19.2 19.2 0 0 0-19.2-19.2H6.4a19.2 19.2 0 0 0 0 38.4h6.5a19.2 19.2 0 0 0 19.2-19.2z" fill="#ECB22E"/>
+            <path d="M44.5 25.7a12.8 12.8 0 1 1 0-25.7 12.8 12.8 0 0 1 0 25.7zm0 6.4a19.2 19.2 0 0 0 19.2-19.2V6.4a19.2 19.2 0 0 0-38.4 0v6.5a19.2 19.2 0 0 0 19.2 19.2z" fill="#ECB22E"/>
+            <path d="M96.3 77.5a12.8 12.8 0 1 1 25.7 0 12.8 12.8 0 0 1-25.7 0zm-6.4 0a19.2 19.2 0 0 0 19.2 19.2h6.5a19.2 19.2 0 0 0 0-38.4h-6.5a19.2 19.2 0 0 0-19.2 19.2z" fill="#36C5F0"/>
+            <path d="M77.5 96.3a12.8 12.8 0 1 1 0 25.7 12.8 12.8 0 0 1 0-25.7zm0-6.4a19.2 19.2 0 0 0-19.2 19.2v6.5a19.2 19.2 0 0 0 38.4 0v-6.5a19.2 19.2 0 0 0-19.2-19.2z" fill="#36C5F0"/>
+        </svg>
+    );
+}
+
 export function LoginPage() {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
@@ -140,29 +155,41 @@ export function LoginPage() {
                         <span>{loading ? 'Signing in...' : 'Sign In'}</span>
                     </button>
 
-                    {!ssoEnabled && (
-                        <>
-                            <div className="relative">
-                                <div className="absolute inset-0 flex items-center">
-                                    <span className="w-full border-t border-gray-100" />
-                                </div>
-                                <div className="relative flex justify-center text-xs uppercase">
-                                    <span className="bg-white px-2 text-gray-400">Restricted Access</span>
-                                </div>
-                            </div>
-
-                            <p className="text-center text-xs text-gray-400 leading-relaxed">
-                                Default credentials: admin / admin<br />
-                                Contact administrator for custom accounts.
-                            </p>
-                        </>
-                    )}
                 </form>
             </div>
 
             {/* Footer */}
-            <div className="mt-8 text-center text-xs text-gray-400">
-                &copy; 2025 Siclaw. All rights reserved.
+            <div className="mt-8 text-center text-xs text-gray-400 space-y-2">
+                <div className="flex items-center justify-center gap-4">
+                    <a
+                        href="https://github.com/scitix/siclaw"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:text-gray-600 transition-colors"
+                    >
+                        GitHub
+                    </a>
+                    <span className="text-gray-200">|</span>
+                    <a
+                        href="https://join.slack.com/t/siclaw-scitix/shared_invite/zt-3rrsoc2ic-JIfbfvT1_04sqgQorSRfmw"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 hover:text-gray-600 transition-colors"
+                    >
+                        <SlackIcon />
+                        Slack
+                    </a>
+                    <span className="text-gray-200">|</span>
+                    <a
+                        href="https://siclaw.ai"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:text-gray-600 transition-colors"
+                    >
+                        siclaw.ai
+                    </a>
+                </div>
+                <div>&copy; 2025 Siclaw. All rights reserved.</div>
             </div>
         </div>
     );
