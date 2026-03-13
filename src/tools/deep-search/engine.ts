@@ -628,8 +628,8 @@ export async function investigate(
 
       onProgress?.({ type: "hypothesis", id: hypothesis.id, status: hypothesis.status, confidence: hypothesis.confidence });
     } catch (err) {
-      breaker.recordFailure();
-      if (breaker.tripped) {
+      const justTripped = breaker.recordFailure();
+      if (justTripped) {
         onProgress?.({ type: "phase", phase: "Phase 3/4", detail: "Circuit breaker tripped — LLM API appears unavailable, skipping remaining hypotheses" });
       }
       if (!isRetry) {

@@ -24,11 +24,13 @@ export class CircuitBreaker {
     this.consecutiveFailures = 0;
   }
 
-  /** Record a failed call — may trip the circuit. */
-  recordFailure(): void {
+  /** Record a failed call — may trip the circuit. Returns true if this call caused the trip. */
+  recordFailure(): boolean {
     this.consecutiveFailures++;
-    if (this.consecutiveFailures >= this.threshold) {
+    if (!this._tripped && this.consecutiveFailures >= this.threshold) {
       this._tripped = true;
+      return true;
     }
+    return false;
   }
 }

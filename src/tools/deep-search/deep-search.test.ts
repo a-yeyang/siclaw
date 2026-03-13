@@ -66,11 +66,11 @@ describe("CircuitBreaker", () => {
 
   it("trips after threshold consecutive failures", () => {
     const breaker = new CircuitBreaker(3);
-    breaker.recordFailure();
+    expect(breaker.recordFailure()).toBe(false);
     expect(breaker.tripped).toBe(false);
-    breaker.recordFailure();
+    expect(breaker.recordFailure()).toBe(false);
     expect(breaker.tripped).toBe(false);
-    breaker.recordFailure();
+    expect(breaker.recordFailure()).toBe(true); // this call caused the trip
     expect(breaker.tripped).toBe(true);
   });
 
@@ -84,11 +84,12 @@ describe("CircuitBreaker", () => {
     expect(breaker.tripped).toBe(false); // only 2 consecutive, not 3
   });
 
-  it("stays tripped once opened", () => {
+  it("stays tripped once opened and subsequent failures return false", () => {
     const breaker = new CircuitBreaker(2);
     breaker.recordFailure();
-    breaker.recordFailure();
+    expect(breaker.recordFailure()).toBe(true); // trips here
     expect(breaker.tripped).toBe(true);
+    expect(breaker.recordFailure()).toBe(false); // already tripped, not "just tripped"
     breaker.recordSuccess(); // doesn't un-trip
     expect(breaker.tripped).toBe(true);
   });
