@@ -60,35 +60,44 @@ export function loadOAuth2Config(dbOverrides?: Record<string, string>): OAuth2Co
   };
 }
 
-// ─── CSRF State Store ───────────────────────────────
+// ─── CSRF State (HMAC-signed, stateless) ────────────
+//
+// State is self-contained: timestamp + nonce + HMAC signature.
+// Any pod can generate and verify without shared storage.
 
-const pendingStates = new Map<string, { createdAt: number }>();
 const STATE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-/** Generate a cryptographic random state and store it */
-export function generateState(): string {
-  const state = crypto.randomBytes(16).toString("hex");
-  pendingStates.set(state, { createdAt: Date.now() });
-  return state;
+/**
+ * Generate an HMAC-signed state token.
+ * Format: `<timestamp_hex>.<nonce>.<hmac>`
+ */
+export function generateState(secret: string): string {
+  const ts = Date.now().toString(16);
+  const nonce = crypto.randomBytes(12).toString("hex");
+  const payload = `${ts}.${nonce}`;
+  const hmac = crypto.createHmac("sha256", secret).update(payload).digest("hex").slice(0, 32);
+  return `${payload}.${hmac}`;
 }
 
-/** Validate and consume a state (returns true if valid) */
-export function consumeState(state: string): boolean {
-  const entry = pendingStates.get(state);
-  if (!entry) return false;
-  pendingStates.delete(state);
-  return Date.now() - entry.createdAt < STATE_TTL_MS;
-}
+/**
+ * Verify an HMAC-signed state token.
+ * Checks signature validity and TTL (5 minutes).
+ */
+export function consumeState(state: string, secret: string): boolean {
+  const parts = state.split(".");
+  if (parts.length !== 3) return false;
 
-/** Periodic cleanup of expired states */
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of pendingStates) {
-    if (now - entry.createdAt > STATE_TTL_MS) {
-      pendingStates.delete(key);
-    }
-  }
-}, 60_000);
+  const [ts, nonce, hmac] = parts;
+  const payload = `${ts}.${nonce}`;
+  const expected = crypto.createHmac("sha256", secret).update(payload).digest("hex").slice(0, 32);
+
+  // Constant-time comparison to prevent timing attacks
+  if (!crypto.timingSafeEqual(Buffer.from(hmac), Buffer.from(expected))) return false;
+
+  // Check TTL
+  const createdAt = parseInt(ts, 16);
+  return Date.now() - createdAt < STATE_TTL_MS;
+}
 
 // ─── OAuth2 Flow Steps ──────────────────────────────
 

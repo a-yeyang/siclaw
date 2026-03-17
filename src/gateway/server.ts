@@ -516,7 +516,7 @@ export async function startGateway(opts: StartGatewayOptions): Promise<GatewaySe
         res.end(JSON.stringify({ error: cachedOAuth2Config ? "SSO is disabled" : "SSO not configured" }));
         return;
       }
-      const state = generateState();
+      const state = generateState(jwtSecret);
       const authorizeUrl = buildAuthorizeUrl(cachedOAuth2Config, state);
       console.log(`[gateway] SSO redirect → ${authorizeUrl}`);
       res.writeHead(302, { Location: authorizeUrl });
@@ -546,7 +546,7 @@ export async function startGateway(opts: StartGatewayOptions): Promise<GatewaySe
       }
 
       // Validate CSRF state
-      if (!consumeState(state)) {
+      if (!consumeState(state, jwtSecret)) {
         console.warn("[gateway] SSO invalid or expired state");
         res.writeHead(302, { Location: "/login?error=invalid_state" });
         res.end();
