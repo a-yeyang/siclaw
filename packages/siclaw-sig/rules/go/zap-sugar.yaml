@@ -1,0 +1,38 @@
+rules:
+  - id: siclaw.go.zap-sugar-printf
+    languages: [go]
+    severity: INFO
+    message: "zap sugar printf-style log call"
+    metadata:
+      framework: zap
+      style: printf
+    patterns:
+      - pattern-inside: |
+          import "go.uber.org/zap"
+          ...
+      - pattern-either:
+          - pattern: $LOGGER.Infof($FMT, ...)
+          - pattern: $LOGGER.Infof($FMT)
+          - pattern: $LOGGER.Warnf($FMT, ...)
+          - pattern: $LOGGER.Warnf($FMT)
+          - pattern: $LOGGER.Errorf($FMT, ...)
+          - pattern: $LOGGER.Errorf($FMT)
+
+  - id: siclaw.go.zap-sugar-structured
+    languages: [go]
+    severity: INFO
+    message: "zap sugar structured log call"
+    metadata:
+      framework: zap
+      style: structured
+    patterns:
+      - pattern-inside: |
+          import "go.uber.org/zap"
+          ...
+      - pattern-either:
+          - pattern: $LOGGER.Infow($MSG, $...KVPAIRS)
+          - pattern: $LOGGER.Infow($MSG)
+          - pattern: $LOGGER.Warnw($MSG, $...KVPAIRS)
+          - pattern: $LOGGER.Warnw($MSG)
+          - pattern: $LOGGER.Errorw($MSG, $...KVPAIRS)
+          - pattern: $LOGGER.Errorw($MSG)

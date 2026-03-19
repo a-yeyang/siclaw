@@ -1,0 +1,95 @@
+{
+  "version": "1.156.0",
+  "results": [
+    {
+      "check_id": "siclaw.go.klog-printf",
+      "path": "pkg/controller/pod.go",
+      "start": { "line": 42, "col": 2, "offset": 1200 },
+      "end": { "line": 42, "col": 65, "offset": 1263 },
+      "extra": {
+        "message": "klog printf-style logging call",
+        "metadata": { "framework": "klog", "style": "printf" },
+        "severity": "INFO",
+        "lines": "\tklog.Errorf(\"Failed to create pod %s: %v\", pod.Name, err)",
+        "metavars": {
+          "$FMT": {
+            "start": { "line": 42, "col": 15, "offset": 1213 },
+            "end": { "line": 42, "col": 47, "offset": 1245 },
+            "abstract_content": "\"Failed to create pod %s: %v\""
+          }
+        }
+      }
+    },
+    {
+      "check_id": "siclaw.go.klog-structured",
+      "path": "pkg/controller/pod.go",
+      "start": { "line": 58, "col": 2, "offset": 1800 },
+      "end": { "line": 58, "col": 72, "offset": 1870 },
+      "extra": {
+        "message": "klog structured logging call",
+        "metadata": { "framework": "klog", "style": "structured" },
+        "severity": "INFO",
+        "lines": "\tklog.InfoS(\"Pod scheduled successfully\", \"pod\", pod.Name, \"node\", nodeName)",
+        "metavars": {
+          "$MSG": {
+            "start": { "line": 58, "col": 13, "offset": 1811 },
+            "end": { "line": 58, "col": 41, "offset": 1839 },
+            "abstract_content": "\"Pod scheduled successfully\""
+          },
+          "$...KVPAIRS": {
+            "start": { "line": 58, "col": 43, "offset": 1841 },
+            "end": { "line": 58, "col": 71, "offset": 1869 },
+            "abstract_content": "\"pod\", pod.Name, \"node\", nodeName"
+          }
+        }
+      }
+    },
+    {
+      "check_id": "siclaw.go.logr-structured",
+      "path": "pkg/controller/pod.go",
+      "start": { "line": 75, "col": 2, "offset": 2400 },
+      "end": { "line": 75, "col": 80, "offset": 2478 },
+      "extra": {
+        "message": "logr structured logging call",
+        "metadata": { "framework": "logr", "style": "structured" },
+        "severity": "ERROR",
+        "lines": "\tlogger.Error(err, \"Failed to reconcile\", \"namespace\", ns, \"name\", name)",
+        "metavars": {
+          "$MSG": {
+            "start": { "line": 75, "col": 21, "offset": 2419 },
+            "end": { "line": 75, "col": 43, "offset": 2441 },
+            "abstract_content": "\"Failed to reconcile\""
+          },
+          "$...KVPAIRS": {
+            "start": { "line": 75, "col": 45, "offset": 2443 },
+            "end": { "line": 75, "col": 79, "offset": 2477 },
+            "abstract_content": "\"namespace\", ns, \"name\", name"
+          }
+        }
+      }
+    },
+    {
+      "check_id": "siclaw.go.zap-sugar-printf",
+      "path": "pkg/controller/pod.go",
+      "start": { "line": 90, "col": 2, "offset": 3000 },
+      "end": { "line": 90, "col": 68, "offset": 3066 },
+      "extra": {
+        "message": "zap sugar printf-style logging call",
+        "metadata": { "framework": "zap", "style": "printf" },
+        "severity": "INFO",
+        "lines": "\tsugar.Infof(\"Starting controller for %s with %d workers\", name, count)",
+        "metavars": {
+          "$FMT": {
+            "start": { "line": 90, "col": 14, "offset": 3012 },
+            "end": { "line": 90, "col": 56, "offset": 3054 },
+            "abstract_content": "\"Starting controller for %s with %d workers\""
+          }
+        }
+      }
+    }
+  ],
+  "errors": [],
+  "paths": {
+    "scanned": ["pkg/controller/pod.go"]
+  }
+}

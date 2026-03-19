@@ -11,6 +11,10 @@
     "./parser": {
       "types": "./dist/parser/index.d.ts",
       "default": "./dist/parser/index.js"
+    },
+    "./extraction": {
+      "types": "./dist/extraction/index.d.ts",
+      "default": "./dist/extraction/index.js"
     }
   },
   "files": ["dist/"],

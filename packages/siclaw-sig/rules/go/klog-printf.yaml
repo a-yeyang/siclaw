@@ -1,0 +1,19 @@
+rules:
+  - id: siclaw.go.klog-printf
+    languages: [go]
+    severity: INFO
+    message: "klog printf-style log call"
+    metadata:
+      framework: klog
+      style: printf
+    pattern-either:
+      - pattern: klog.Infof($FMT, ...)
+      - pattern: klog.Infof($FMT)
+      - pattern: klog.Warningf($FMT, ...)
+      - pattern: klog.Warningf($FMT)
+      - pattern: klog.Errorf($FMT, ...)
+      - pattern: klog.Errorf($FMT)
+      - pattern: klog.Fatalf($FMT, ...)
+      - pattern: klog.Fatalf($FMT)
+      - pattern: klog.V($LEVEL).Infof($FMT, ...)
+      - pattern: klog.V($LEVEL).Infof($FMT)

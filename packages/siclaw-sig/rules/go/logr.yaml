@@ -1,0 +1,17 @@
+rules:
+  - id: siclaw.go.logr-structured
+    languages: [go]
+    severity: INFO
+    message: "logr structured log call"
+    metadata:
+      framework: logr
+      style: structured
+    patterns:
+      - pattern-inside: |
+          import "github.com/go-logr/logr"
+          ...
+      - pattern-either:
+          - pattern: $LOGGER.Info($MSG, $...KVPAIRS)
+          - pattern: $LOGGER.Info($MSG)
+          - pattern: $LOGGER.Error($_, $MSG, $...KVPAIRS)
+          - pattern: $LOGGER.Error($_, $MSG)

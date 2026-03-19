@@ -1,0 +1,15 @@
+rules:
+  - id: siclaw.go.klog-structured
+    languages: [go]
+    severity: INFO
+    message: "klog structured log call"
+    metadata:
+      framework: klog
+      style: structured
+    pattern-either:
+      - pattern: klog.InfoS($MSG, $...KVPAIRS)
+      - pattern: klog.InfoS($MSG)
+      - pattern: klog.ErrorS($_, $MSG, $...KVPAIRS)
+      - pattern: klog.ErrorS($_, $MSG)
+      - pattern: klog.V($LEVEL).InfoS($MSG, $...KVPAIRS)
+      - pattern: klog.V($LEVEL).InfoS($MSG)

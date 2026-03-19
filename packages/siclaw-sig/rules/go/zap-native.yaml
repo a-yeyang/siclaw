@@ -1,0 +1,18 @@
+rules:
+  - id: siclaw.go.zap-native
+    languages: [go]
+    severity: INFO
+    message: "zap native structured log call"
+    metadata:
+      framework: zap
+      style: structured
+    patterns:
+      - pattern-inside: |
+          import "go.uber.org/zap"
+          ...
+      - pattern-either:
+          - pattern: $LOGGER.Info($MSG, ...)
+          - pattern: $LOGGER.Warn($MSG, ...)
+          - pattern: $LOGGER.Error($MSG, ...)
+          - pattern: $LOGGER.Debug($MSG, ...)
+          - pattern: $LOGGER.Fatal($MSG, ...)
