@@ -1244,6 +1244,56 @@ export async function startGateway(opts: StartGatewayOptions): Promise<GatewaySe
             return;
           }
 
+          // Internal knowledge endpoint: GET /api/internal/knowledge
+          // Returns .sig knowledge packages for AgentBox consumption
+          if (url === "/api/internal/knowledge" && method === "GET") {
+            (async () => {
+              try {
+                const config = loadConfig();
+                const knowledgeDir = path.resolve(process.cwd(), config.paths.knowledgeDir);
+
+                if (!fs.existsSync(knowledgeDir)) {
+                  res.writeHead(200, { "Content-Type": "application/json" });
+                  res.end(JSON.stringify({ components: [] }));
+                  return;
+                }
+
+                const entries = fs.readdirSync(knowledgeDir, { withFileTypes: true });
+                const components: Array<{ name: string; manifest: string; templates: string }> = [];
+
+                for (const entry of entries) {
+                  if (!entry.isDirectory()) continue;
+                  const compDir = path.join(knowledgeDir, entry.name);
+                  let manifest = "";
+                  let templates = "";
+
+                  const manifestPath = path.join(compDir, "manifest.yaml");
+                  if (fs.existsSync(manifestPath)) {
+                    manifest = fs.readFileSync(manifestPath, "utf-8");
+                  }
+
+                  const templatesPath = path.join(compDir, "templates.jsonl");
+                  if (fs.existsSync(templatesPath)) {
+                    templates = fs.readFileSync(templatesPath, "utf-8");
+                  }
+
+                  if (manifest || templates) {
+                    components.push({ name: entry.name, manifest, templates });
+                  }
+                }
+
+                res.writeHead(200, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ components }));
+                console.log(`[gateway] Knowledge packages served: ${components.length} components [${components.map(c => c.name).join(", ")}]`);
+              } catch (err) {
+                console.error("[gateway] knowledge error:", err);
+                res.writeHead(500, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ error: "Internal server error" }));
+              }
+            })();
+            return;
+          }
+
           // Default: 404 for unknown internal API paths
           res.writeHead(404, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Not found" }));

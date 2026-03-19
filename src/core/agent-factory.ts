@@ -44,6 +44,7 @@ import { createMemorySearchTool } from "../tools/memory-search.js";
 import { createMemoryGetTool } from "../tools/memory-get.js";
 import { createCredentialListTool } from "../tools/credential-list.js";
 import { createClusterInfoTool } from "../tools/cluster-info.js";
+import { createLookupLogSourceTool } from "../tools/lookup-log-source/index.js";
 import { createMemoryIndexer, type MemoryIndexer, type MemoryIndexerOpts } from "../memory/index.js";
 import { buildSreSystemPrompt } from "./prompt.js";
 import contextPruningExtension from "./extensions/context-pruning.js";
@@ -291,6 +292,7 @@ export async function createSiclawSession(
     createSaveFeedbackTool(sessionIdRef),
     createCredentialListTool(kubeconfigRef),
     createClusterInfoTool(kubeconfigRef),
+    createLookupLogSourceTool(),
   ];
 
   // Schedule tool works in web + channel (no UI rendering needed, just DB ops).

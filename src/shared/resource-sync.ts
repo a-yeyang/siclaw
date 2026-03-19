@@ -10,7 +10,7 @@
 // ── Scalar types ──────────────────────────────────────────────────────
 
 /** Every syncable resource has a well-known type key. */
-export type ResourceType = "mcp" | "skills";
+export type ResourceType = "mcp" | "skills" | "knowledge";
 
 // ── Config / descriptor interfaces ────────────────────────────────────
 
@@ -102,6 +102,12 @@ export const RESOURCE_DESCRIPTORS: Record<ResourceType, ResourceDescriptor> = {
     type: "skills",
     gatewayPath: "/api/internal/skills/bundle",
     reloadPath: "/api/reload-skills",
+    retry: { maxRetries: 3, baseDelayMs: 1000 },
+  },
+  knowledge: {
+    type: "knowledge",
+    gatewayPath: "/api/internal/knowledge",
+    reloadPath: "/api/reload-knowledge",
     retry: { maxRetries: 3, baseDelayMs: 1000 },
   },
 };

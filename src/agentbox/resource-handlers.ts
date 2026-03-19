@@ -145,11 +145,66 @@ export const skillsHandler: AgentBoxResourceHandler<SkillBundlePayload> = {
   },
 };
 
+// ── Knowledge handler ─────────────────────────────────────────────────
+
+/**
+ * Payload shape returned by the Gateway's /api/internal/knowledge.
+ */
+interface KnowledgePayload {
+  components: Array<{
+    name: string;
+    manifest: string;
+    templates: string;
+  }>;
+}
+
+export const knowledgeHandler: AgentBoxResourceHandler<KnowledgePayload> = {
+  type: "knowledge",
+
+  async fetch(client: GatewayClientLike): Promise<KnowledgePayload> {
+    const descriptor = RESOURCE_DESCRIPTORS.knowledge;
+    const data = await client.request(descriptor.gatewayPath, "GET");
+    return data as KnowledgePayload;
+  },
+
+  async materialize(payload: KnowledgePayload): Promise<number> {
+    const config = loadConfig();
+    const knowledgeDir = path.resolve(process.cwd(), config.paths.knowledgeDir);
+
+    // Clear existing knowledge directory contents
+    if (fs.existsSync(knowledgeDir)) {
+      for (const entry of fs.readdirSync(knowledgeDir)) {
+        const entryPath = path.join(knowledgeDir, entry);
+        fs.rmSync(entryPath, { recursive: true });
+      }
+    } else {
+      fs.mkdirSync(knowledgeDir, { recursive: true });
+    }
+
+    for (const comp of payload.components) {
+      const compDir = resolveUnderDir(knowledgeDir, comp.name);
+      fs.mkdirSync(compDir, { recursive: true });
+
+      if (comp.manifest) {
+        fs.writeFileSync(path.join(compDir, "manifest.yaml"), comp.manifest);
+      }
+      if (comp.templates) {
+        fs.writeFileSync(path.join(compDir, "templates.jsonl"), comp.templates);
+      }
+    }
+
+    return payload.components.length;
+  },
+
+  // No postReload needed — lookup_log_source reads files on every invocation
+};
+
 // ── Registry ──────────────────────────────────────────────────────────
 
 const handlers = new Map<ResourceType, AgentBoxResourceHandler<any>>([
   ["mcp", mcpHandler],
   ["skills", skillsHandler],
+  ["knowledge", knowledgeHandler],
 ]);
 
 /**
