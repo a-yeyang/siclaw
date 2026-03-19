@@ -61,14 +61,14 @@ build-web: ## Compile Web frontend (Vite)
 # ==================== Docker ====================
 ##@ Docker
 
-docker: build ## Build all Docker images
+docker: ## Build all Docker images
 	docker build -f Dockerfile.gateway  $(DOCKER_LABELS) -t $(GATEWAY_IMAGE)  .
 	docker build -f Dockerfile.agentbox $(DOCKER_LABELS) -t $(AGENTBOX_IMAGE) .
 
-docker-gateway: build ## Build gateway image
+docker-gateway: ## Build gateway image
 	docker build -f Dockerfile.gateway $(DOCKER_LABELS) -t $(GATEWAY_IMAGE) .
 
-docker-agentbox: build-ts ## Build agentbox image
+docker-agentbox: ## Build agentbox image
 	docker build -f Dockerfile.agentbox $(DOCKER_LABELS) -t $(AGENTBOX_IMAGE) .
 
 push: push-gateway push-agentbox ## Push all images to registry
