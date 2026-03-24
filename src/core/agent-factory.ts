@@ -660,7 +660,7 @@ Follow the structured workflow described in the deep-investigation skill guide.`
     authStorage,
     modelRegistry,
     model: configuredModel,
-    thinkingLevel: "high",
+    thinkingLevel: (configuredModel?.reasoning ? "high" : "off") as any,
   });
 
   // ── Input streamFn wrappers (modify context.messages before API call) ──
@@ -707,6 +707,33 @@ Follow the structured workflow described in the deep-investigation skill guide.`
   // 5. Tool result context guard (truncate/compact oversized tool results)
   const contextWindow = configuredModel?.contextWindow ?? 128_000;
   installToolResultContextGuard({ agent: session.agent, contextWindowTokens: contextWindow });
+
+  // DEBUG: Log turn events to diagnose empty response issue
+  {
+    let turnHasText = false;
+    let turnHasTools = false;
+    let turnStopReason: string | null = null;
+    session.subscribe((event: any) => {
+      if (event.type === "turn_start") {
+        turnHasText = false;
+        turnHasTools = false;
+        turnStopReason = null;
+      }
+      if (event.type === "message_end" && event.message?.role === "assistant") {
+        const content = event.message.content;
+        const textBlocks = Array.isArray(content) ? content.filter((b: any) => b.type === "text" && b.text?.trim()) : [];
+        const toolBlocks = Array.isArray(content) ? content.filter((b: any) => b.type === "toolCall") : [];
+        turnHasText = textBlocks.length > 0;
+        turnHasTools = toolBlocks.length > 0;
+        turnStopReason = event.message.stopReason ?? null;
+        if (!turnHasText && !turnHasTools) {
+          console.warn(`[empty-response-debug] EMPTY assistant message: stopReason=${turnStopReason} contentBlocks=${Array.isArray(content) ? content.length : 0} usage=${JSON.stringify(event.message.usage ?? {})}`);
+        } else {
+          console.log(`[turn-debug] assistant: text=${turnHasText}(${textBlocks.map((b: any) => b.text?.length ?? 0)}) tools=${toolBlocks.length} stop=${turnStopReason}`);
+        }
+      }
+    });
+  }
 
   const brain: BrainSession = new PiAgentBrain(session);
   return { brain, session, modelFallbackMessage, customTools, kubeconfigRef, llmConfigRef, skillsDirs, mode, mcpManager, memoryIndexer, sessionIdRef };

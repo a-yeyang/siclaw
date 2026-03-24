@@ -33,8 +33,11 @@ export function createKnowledgeSearchTool(indexer?: MemoryIndexer): ToolDefiniti
       );
     },
     renderResult: renderTextResult,
-    description: `Search the team knowledge base for internal documentation, runbooks, architecture guides, and infrastructure reference.
-Use this tool when the user asks about internal procedures, known configurations, or team-specific documentation.
+    description: `Search the team knowledge base for architecture, failure modes, and diagnostic procedures of internal systems.
+
+Call this tool BEFORE running diagnostic commands. It tells you what components exist, how they connect, what can go wrong, and how to check — so you diagnose with direction instead of guessing.
+
+This is a lightweight lookup. When in doubt, call it.
 
 Parameters:
 - query: Natural language search query

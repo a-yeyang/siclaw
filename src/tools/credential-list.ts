@@ -120,13 +120,14 @@ Optional filters:
           ...(c.probe_error ? { probe_error: c.probe_error } : {}),
         }));
 
-        // Build selection hint for the agent
+        // Build selection hint for the agent — always require explicit selection
         const reachableKubeconfigs = kubeconfigs.filter((c) => c.reachable);
         let hint = "";
-        if (kubeconfigs.length > 1) {
-          hint = `\n\nIMPORTANT: ${kubeconfigs.length} kubeconfigs found, ${reachableKubeconfigs.length} reachable. Ask the user which one to use BEFORE running any kubectl command. Do NOT pick one yourself.`;
-        } else if (kubeconfigs.length === 1 && !kubeconfigs[0].reachable) {
-          hint = `\n\nWARNING: The only kubeconfig (${kubeconfigs[0].name}) is unreachable: ${kubeconfigs[0].probe_error}. Inform the user.`;
+        if (kubeconfigs.length > 0) {
+          hint = `\n\nIMPORTANT: ${kubeconfigs.length} kubeconfig(s) found, ${reachableKubeconfigs.length} reachable. Always pass --kubeconfig=<name> for all kubectl commands.`;
+        }
+        if (kubeconfigs.length === 1 && !kubeconfigs[0].reachable) {
+          hint += `\nWARNING: The kubeconfig (${kubeconfigs[0].name}) is unreachable: ${kubeconfigs[0].probe_error}. Inform the user.`;
         }
 
         return {

@@ -41,10 +41,14 @@ describe("resolveRequiredKubeconfig", () => {
     expect(result).toEqual({ path: null });
   });
 
-  it("auto-selects single kubeconfig without name", () => {
+  it("errors on single kubeconfig without name — no auto-select", () => {
     writeManifest([{ name: "prod", type: "kubeconfig", files: ["prod.kubeconfig"] }]);
     const result = resolveRequiredKubeconfig(credDir, undefined);
-    expect(result).toEqual({ path: join(credDir, "prod.kubeconfig") });
+    expect("error" in result).toBe(true);
+    if ("error" in result) {
+      expect(result.error).toContain("must specify the kubeconfig parameter");
+      expect(result.availableNames).toEqual(["prod"]);
+    }
   });
 
   it("resolves single kubeconfig by name", () => {
@@ -61,7 +65,7 @@ describe("resolveRequiredKubeconfig", () => {
     const result = resolveRequiredKubeconfig(credDir, undefined);
     expect("error" in result).toBe(true);
     if ("error" in result) {
-      expect(result.error).toContain("Multiple kubeconfigs");
+      expect(result.error).toContain("must specify the kubeconfig parameter");
       expect(result.error).toContain("prod");
       expect(result.error).toContain("staging");
       expect(result.availableNames).toEqual(["prod", "staging"]);
@@ -101,32 +105,36 @@ describe("resolveRequiredKubeconfig", () => {
     }
   });
 
-  it("returns null path when kubeconfig entry has empty files array", () => {
+  it("errors on single kubeconfig with empty files array without name", () => {
     writeManifest([{ name: "empty", type: "kubeconfig", files: [] }]);
     const result = resolveRequiredKubeconfig(credDir, undefined);
-    expect(result).toEqual({ path: null });
+    expect("error" in result).toBe(true);
+    if ("error" in result) {
+      expect(result.error).toContain("must specify the kubeconfig parameter");
+    }
   });
 
   it("rejects path traversal in manifest file entries", () => {
-    // Write manifest directly — writeManifest helper would try to create the traversal file
     writeFileSync(
       join(credDir, "manifest.json"),
       JSON.stringify([{ name: "evil", type: "kubeconfig", files: ["../../etc/passwd"] }]),
     );
-    const result = resolveRequiredKubeconfig(credDir, undefined);
+    const result = resolveRequiredKubeconfig(credDir, "evil");
     expect("error" in result).toBe(true);
     if ("error" in result) {
       expect(result.error).toContain("escapes credentials directory");
     }
   });
 
-  it("ignores non-kubeconfig entries when counting", () => {
+  it("errors on single kubeconfig among non-kubeconfig entries without name", () => {
     writeManifest([
       { name: "prod", type: "kubeconfig", files: ["prod.kubeconfig"] },
       { name: "ssh-key", type: "ssh_key", files: ["id_rsa"] },
     ]);
-    // Only 1 kubeconfig → auto-select
     const result = resolveRequiredKubeconfig(credDir, undefined);
-    expect(result).toEqual({ path: join(credDir, "prod.kubeconfig") });
+    expect("error" in result).toBe(true);
+    if ("error" in result) {
+      expect(result.error).toContain("must specify the kubeconfig parameter");
+    }
   });
 });

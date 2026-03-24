@@ -89,7 +89,7 @@ Examples:
       }),
       kubeconfig: Type.Optional(
         Type.String({
-          description: "Credential name of the target cluster (from credential_list). If omitted, uses the default kubeconfig.",
+          description: "Credential name of the target cluster (from credential_list). Always specify this — do not rely on defaults.",
         })
       ),
       image: Type.Optional(

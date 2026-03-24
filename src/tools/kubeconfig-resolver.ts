@@ -95,17 +95,11 @@ export function resolveRequiredKubeconfig(
     }
   };
 
-  // Single kubeconfig — auto-select (name is optional)
-  if (kubeEntries.length === 1 && !name) {
-    const file = kubeEntries[0].files.find((f) => f.endsWith(".kubeconfig")) ?? kubeEntries[0].files[0];
-    return file ? safeResolve(file) : { path: null };
-  }
-
-  // Name required from here
+  // Name is always required — no auto-selection even for single kubeconfig
   if (!name) {
     const names = kubeEntries.map((e) => e.name);
     return {
-      error: `Multiple kubeconfigs available (${names.join(", ")}). You must specify the kubeconfig parameter to select a cluster. Use credential_list to see available credentials.`,
+      error: `${kubeEntries.length} kubeconfig(s) available (${names.join(", ")}). You must specify the kubeconfig parameter to select a cluster. Use credential_list to see available credentials.`,
       availableNames: names,
     };
   }
