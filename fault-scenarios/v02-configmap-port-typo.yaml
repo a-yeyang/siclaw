@@ -1,0 +1,234 @@
+# ============================================================
+# v02: ConfigMap Port Typo
+# Difficulty: Medium | Layers: 4 | Type: Config Tracing
+#
+# Root Cause: ConfigMap "data-store-config" has LISTEN_PORT=5433
+#             (typo, should be 5432)
+#
+# Fault Chain:
+#   ConfigMap LISTEN_PORT=5433
+#     → data-store pod listens on 5433 (from envFrom)
+#       → readinessProbe checks 5432 (hardcoded) → fails
+#         → Service 0 endpoints
+#           → cache-service init waits → Init:0/1
+#             → task-processor CrashLoopBackOff
+#
+# Fix: Change ConfigMap LISTEN_PORT to 5432 + rollout restart
+#
+# Siclaw Result: ❌ Stopped at "Pod listens on 5433 vs Service 5432"
+#                Did NOT trace 5433 to ConfigMap.
+#                After manual follow-up "why 5433?" → found ConfigMap.
+#
+# Suggested Prompt:
+#   "fault-demo namespace 里的任务处理管道挂了，帮我排查一下"
+#
+# Key Challenge:
+#   - readinessProbe is hardcoded tcpSocket (no $VAR reference)
+#   - Container logs show port value but Siclaw treated it as fact
+#   - Must proactively check envFrom → ConfigMap
+# ============================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fault-demo
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: data-store-config
+  namespace: fault-demo
+  annotations:
+    description: "PostgreSQL-compatible data store configuration"
+    last-modified: "2026-03-18T14:22:00Z"
+    modified-by: "ci-pipeline"
+    change-ticket: "OPS-4521"
+data:
+  DB_NAME: "pipeline_data"
+  DB_USER: "pipeline_svc"
+  LISTEN_PORT: "5433"
+  MAX_CONNECTIONS: "100"
+  SHARED_BUFFERS: "256MB"
+  LOG_LEVEL: "info"
+  DATA_DIR: "/var/lib/data"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: data-store
+  namespace: fault-demo
+  labels:
+    app: data-store
+  annotations:
+    description: "Persistent data store for pipeline state"
+    version: "15.3"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: data-store
+  template:
+    metadata:
+      labels:
+        app: data-store
+    spec:
+      containers:
+        - name: datastore
+          image: registry-cn-shanghai.siflow.cn/k8s-dev/busybox:latest
+          command:
+            - sh
+            - -c
+            - |
+              echo "[$(date)] DataStore v15.3 initializing..."
+              echo "[$(date)] Config: port=$LISTEN_PORT, db=$DB_NAME, user=$DB_USER"
+              echo "[$(date)] Ready to accept connections on port $LISTEN_PORT"
+              while true; do
+                nc -l -p $LISTEN_PORT 2>/dev/null
+                sleep 0.1
+              done
+          envFrom:
+            - configMapRef:
+                name: data-store-config
+          ports:
+            - containerPort: 5432
+          readinessProbe:
+            tcpSocket:
+              port: 5432
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "nc -z localhost $LISTEN_PORT"]
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: data-store
+  namespace: fault-demo
+spec:
+  selector:
+    app: data-store
+  ports:
+    - port: 5432
+      targetPort: 5432
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cache-service
+  namespace: fault-demo
+  labels:
+    app: cache-service
+  annotations:
+    description: "In-memory cache layer"
+    version: "7.2.4"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cache-service
+  template:
+    metadata:
+      labels:
+        app: cache-service
+    spec:
+      initContainers:
+        - name: wait-for-datastore
+          image: registry-cn-shanghai.siflow.cn/k8s-dev/busybox:latest
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for data-store:5432..."
+              until nc -z data-store.fault-demo.svc.cluster.local 5432 2>/dev/null; do
+                echo "$(date): data-store:5432 not reachable, retrying in 3s..."
+                sleep 3
+              done
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+      containers:
+        - name: cache
+          image: registry-cn-shanghai.siflow.cn/k8s-dev/busybox:latest
+          command:
+            - sh
+            - -c
+            - |
+              echo "[$(date)] Cache Service v7.2.4 starting..."
+              while true; do nc -l -p 6379 2>/dev/null; sleep 0.1; done
+          ports:
+            - containerPort: 6379
+          readinessProbe:
+            tcpSocket:
+              port: 6379
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cache-service
+  namespace: fault-demo
+spec:
+  selector:
+    app: cache-service
+  ports:
+    - port: 6379
+      targetPort: 6379
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: task-processor
+  namespace: fault-demo
+  labels:
+    app: task-processor
+  annotations:
+    description: "Pipeline task processor"
+    team: "data-engineering"
+    version: "2.4.1"
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: task-processor
+  template:
+    metadata:
+      labels:
+        app: task-processor
+    spec:
+      containers:
+        - name: processor
+          image: registry-cn-shanghai.siflow.cn/k8s-dev/busybox:latest
+          command:
+            - sh
+            - -c
+            - |
+              echo "[$(date)] Task Processor v2.4.1 starting..."
+              if ! nc -z -w 5 cache-service 6379 2>/dev/null; then
+                echo "[$(date)] FATAL: Cache layer unavailable."
+                exit 1
+              fi
+              while true; do sleep 10; done
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi

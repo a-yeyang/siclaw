@@ -1,0 +1,201 @@
+# ============================================================
+# v14: The Sidecar Port Collision
+# Difficulty: SHOULD BE IMPOSSIBLE | Layers: 5 | Type: Runtime
+#
+# Root Cause: Two containers in the same pod both try to bind
+#   port 8080. Main app binds first (succeeds). Metrics sidecar
+#   reads METRICS_PORT=8080 from ConfigMap, tries to bind same
+#   port → "Address already in use" → crash. But stderr is
+#   suppressed → error log is deliberately vague.
+#
+# Why this should stump Siclaw:
+#   1. Runtime port conflict — not visible in any K8s object
+#   2. Sidecar log: "Failed to start metrics endpoint" (no details)
+#   3. containerPort declarations look safe (8080 vs 9090)
+#   4. But sidecar actually uses $METRICS_PORT=8080 (from ConfigMap)
+#   5. Main app container IS healthy (1/2 Ready) — red herring
+#   6. Cannot kubectl exec to run netstat/ss
+#   7. Requires understanding: pod containers share network namespace
+#
+# Fault Chain:
+#   ConfigMap METRICS_PORT=8080 (same as main app)
+#     → metrics sidecar tries to bind 8080 → "Address already in use"
+#       → sidecar crashes (vague error) → pod 1/2 Ready
+#         → Service 0 endpoints (pod not fully Ready)
+#           → checkout-api CrashLoopBackOff
+#
+# Fix: Change ConfigMap METRICS_PORT to 9090
+#      + rollout restart order-service
+#
+# Suggested Prompt:
+#   "fault-demo 的 checkout 服务起不来，order-service 也有问题"
+#
+# Expected Siclaw Result: ❌ Cannot fully diagnose
+#   Best case: finds METRICS_PORT=8080, notices main app also on 8080,
+#   infers port conflict. But cannot verify without exec.
+# ============================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fault-demo
+  labels:
+    purpose: siclaw-testing
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sidecar-config
+  namespace: fault-demo
+  annotations:
+    description: "Metrics sidecar configuration"
+    managed-by: "helm"
+data:
+  METRICS_PORT: "8080"
+  SCRAPE_INTERVAL: "15"
+  METRICS_PATH: "/metrics"
+  LOG_LEVEL: "info"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service
+  namespace: fault-demo
+  labels:
+    app: order-service
+    tier: backend
+  annotations:
+    description: "Order management service with metrics sidecar"
+    version: "3.2.0"
+    team: "commerce"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: order-service
+  template:
+    metadata:
+      labels:
+        app: order-service
+        tier: backend
+    spec:
+      containers:
+        # Main app — binds port 8080 first, succeeds
+        - name: app
+          image: registry-cn-shanghai.siflow.cn/k8s-dev/busybox:latest
+          command:
+            - sh
+            - -c
+            - |
+              echo "[$(date)] Order Service v3.2.0 starting..."
+              echo "[$(date)] HTTP server listening on port 8080"
+              while true; do
+                nc -l -p 8080 2>/dev/null
+                sleep 0.1
+              done
+          ports:
+            - containerPort: 8080
+              name: http
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+
+        # Metrics sidecar — tries same port → crash (stderr suppressed)
+        - name: metrics
+          image: registry-cn-shanghai.siflow.cn/k8s-dev/busybox:latest
+          command:
+            - sh
+            - -c
+            - |
+              echo "[$(date)] Metrics Exporter v1.2.0 initializing..."
+              echo "[$(date)] Scrape interval: ${SCRAPE_INTERVAL}s"
+              echo "[$(date)] Starting metrics endpoint..."
+              nc -l -p $METRICS_PORT 2>/dev/null
+              echo "[$(date)] ERROR: Failed to start metrics endpoint. Exiting."
+              exit 1
+          envFrom:
+            - configMapRef:
+                name: sidecar-config
+          ports:
+            - containerPort: 9090
+              name: metrics
+          readinessProbe:
+            tcpSocket:
+              port: 9090
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+  namespace: fault-demo
+  labels:
+    app: order-service
+spec:
+  selector:
+    app: order-service
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkout-api
+  namespace: fault-demo
+  labels:
+    app: checkout-api
+    tier: frontend
+  annotations:
+    description: "Checkout API — orchestrates order creation"
+    version: "2.0.1"
+    team: "commerce"
+    oncall: "commerce-oncall"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: checkout-api
+  template:
+    metadata:
+      labels:
+        app: checkout-api
+        tier: frontend
+    spec:
+      containers:
+        - name: checkout
+          image: registry-cn-shanghai.siflow.cn/k8s-dev/busybox:latest
+          command:
+            - sh
+            - -c
+            - |
+              echo "[$(date)] Checkout API v2.0.1 starting..."
+              echo "[$(date)] Connecting to order-service:8080..."
+              if ! nc -z -w 5 order-service 8080 2>/dev/null; then
+                echo "[$(date)] ERROR: Cannot connect to order-service:8080"
+                echo "[$(date)] FATAL: Order service unavailable."
+                exit 1
+              fi
+              echo "[$(date)] Connected. Processing checkouts..."
+              while true; do sleep 10; done
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi

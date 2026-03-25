@@ -1,0 +1,193 @@
+# ============================================================
+# v05: NetworkPolicy Blocks DNS (Egress Side Effect)
+# Difficulty: Medium | Layers: 5 | Type: Network
+#
+# Root Cause: NetworkPolicy "api-egress-lockdown" restricts egress
+#   from inventory-api pods to only inventory-db:5432.
+#   DNS (UDP/TCP 53 to kube-dns) is NOT whitelisted.
+#   Any egress rule makes all other egress default-deny.
+#
+# Fault Chain:
+#   NetworkPolicy missing DNS egress exception
+#     → inventory-api DNS queries blocked → readiness fails
+#       → Service 0 endpoints
+#         → order-processor CrashLoopBackOff
+#
+# Fix: Add DNS egress rule to NetworkPolicy
+#   - to:
+#       - namespaceSelector: {}
+#         podSelector:
+#           matchLabels:
+#             k8s-app: kube-dns
+#     ports:
+#       - port: 53
+#         protocol: UDP
+#
+# Siclaw Result: ✅ Found root cause
+#
+# Suggested Prompt:
+#   "fault-demo namespace 里的订单处理服务挂了，帮我查一下原因"
+# ============================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fault-demo
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-egress-lockdown
+  namespace: fault-demo
+  annotations:
+    description: "Restrict inventory-api egress to database only — PCI-DSS"
+    created-by: "security-team"
+    ticket: "SEC-3105"
+spec:
+  podSelector:
+    matchLabels:
+      app: inventory-api
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: inventory-db
+      ports:
+        - port: 5432
+          protocol: TCP
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventory-db
+  namespace: fault-demo
+  labels:
+    app: inventory-db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: inventory-db
+  template:
+    metadata:
+      labels:
+        app: inventory-db
+    spec:
+      containers:
+        - name: postgres
+          image: registry-cn-shanghai.siflow.cn/k8s-dev/busybox:latest
+          command: ["sh", "-c", "while true; do nc -l -p 5432 2>/dev/null; sleep 0.1; done"]
+          ports:
+            - containerPort: 5432
+          readinessProbe:
+            tcpSocket:
+              port: 5432
+            initialDelaySeconds: 3
+            periodSeconds: 5
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inventory-db
+  namespace: fault-demo
+spec:
+  selector:
+    app: inventory-db
+  ports:
+    - port: 5432
+      targetPort: 5432
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventory-api
+  namespace: fault-demo
+  labels:
+    app: inventory-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: inventory-api
+  template:
+    metadata:
+      labels:
+        app: inventory-api
+    spec:
+      containers:
+        - name: api
+          image: registry-cn-shanghai.siflow.cn/k8s-dev/busybox:latest
+          command:
+            - sh
+            - -c
+            - |
+              echo "[$(date)] Inventory API starting..."
+              echo "[$(date)] Listening on port 8080"
+              while true; do nc -l -p 8080 2>/dev/null; sleep 0.1; done
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "nc -z -w 2 inventory-db 5432 2>/dev/null"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 15
+          env:
+            - name: DB_HOST
+              value: "inventory-db"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inventory-api
+  namespace: fault-demo
+spec:
+  selector:
+    app: inventory-api
+  ports:
+    - port: 8080
+      targetPort: 8080
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-processor
+  namespace: fault-demo
+  labels:
+    app: order-processor
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: order-processor
+  template:
+    metadata:
+      labels:
+        app: order-processor
+    spec:
+      containers:
+        - name: processor
+          image: registry-cn-shanghai.siflow.cn/k8s-dev/busybox:latest
+          command:
+            - sh
+            - -c
+            - |
+              echo "[$(date)] Order Processor starting..."
+              if ! nc -z -w 5 inventory-api 8080 2>/dev/null; then
+                echo "[$(date)] FATAL: Inventory service unavailable."
+                exit 1
+              fi
+              while true; do sleep 10; done

@@ -1,0 +1,248 @@
+# ============================================================
+# v13: Circular Dependency Deadlock
+# Difficulty: Hard | Layers: 5 | Type: Graph Reasoning
+#
+# Root Cause: Three services form a circular init dependency:
+#   order-svc → checkout-processor → payment-svc → order-svc
+#   None can ever start. All stuck in Init:0/1 forever.
+#
+# Fault Chain:
+#   Circular init container dependency (3-node cycle)
+#     → All three services stuck in Init:0/1
+#       → All three Services have 0 endpoints
+#         → api-gateway CrashLoopBackOff
+#
+# Fix: Remove one init container dependency to break the cycle
+#   (e.g., remove payment-svc's wait-for-order init container)
+#
+# Suggested Prompt:
+#   "fault-demo 的电商系统完全启动不了，所有服务都卡住了"
+#
+# Key Challenge:
+#   - Each individual init log looks normal ("waiting for X")
+#   - Siclaw must read 3 init logs and connect them into a cycle
+#   - Graph reasoning: A→B→C→A = deadlock
+# ============================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fault-demo
+
+---
+# Node 1: order-svc → waits for checkout-processor
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-svc
+  namespace: fault-demo
+  labels:
+    app: order-svc
+  annotations:
+    depends-on: "checkout-processor"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: order-svc
+  template:
+    metadata:
+      labels:
+        app: order-svc
+    spec:
+      initContainers:
+        - name: wait-for-checkout
+          image: registry-cn-shanghai.siflow.cn/k8s-dev/busybox:latest
+          command:
+            - sh
+            - -c
+            - |
+              echo "order-svc: Waiting for checkout-processor:8080..."
+              until nc -z checkout-processor 8080 2>/dev/null; do
+                echo "$(date): checkout-processor:8080 not ready, retrying in 3s..."
+                sleep 3
+              done
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+      containers:
+        - name: order
+          image: registry-cn-shanghai.siflow.cn/k8s-dev/busybox:latest
+          command: ["sh", "-c", "while true; do nc -l -p 8080 2>/dev/null; sleep 0.1; done"]
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-svc
+  namespace: fault-demo
+spec:
+  selector:
+    app: order-svc
+  ports:
+    - port: 8080
+      targetPort: 8080
+
+---
+# Node 2: checkout-processor → waits for payment-svc
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkout-processor
+  namespace: fault-demo
+  labels:
+    app: checkout-processor
+  annotations:
+    depends-on: "payment-svc"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: checkout-processor
+  template:
+    metadata:
+      labels:
+        app: checkout-processor
+    spec:
+      initContainers:
+        - name: wait-for-payment
+          image: registry-cn-shanghai.siflow.cn/k8s-dev/busybox:latest
+          command:
+            - sh
+            - -c
+            - |
+              echo "checkout-processor: Waiting for payment-svc:8080..."
+              until nc -z payment-svc 8080 2>/dev/null; do
+                echo "$(date): payment-svc:8080 not ready, retrying in 3s..."
+                sleep 3
+              done
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+      containers:
+        - name: checkout
+          image: registry-cn-shanghai.siflow.cn/k8s-dev/busybox:latest
+          command: ["sh", "-c", "while true; do nc -l -p 8080 2>/dev/null; sleep 0.1; done"]
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: checkout-processor
+  namespace: fault-demo
+spec:
+  selector:
+    app: checkout-processor
+  ports:
+    - port: 8080
+      targetPort: 8080
+
+---
+# Node 3: payment-svc → waits for order-svc (CLOSES THE CIRCLE)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-svc
+  namespace: fault-demo
+  labels:
+    app: payment-svc
+  annotations:
+    depends-on: "order-svc"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payment-svc
+  template:
+    metadata:
+      labels:
+        app: payment-svc
+    spec:
+      initContainers:
+        - name: wait-for-order
+          image: registry-cn-shanghai.siflow.cn/k8s-dev/busybox:latest
+          command:
+            - sh
+            - -c
+            - |
+              echo "payment-svc: Waiting for order-svc:8080..."
+              until nc -z order-svc 8080 2>/dev/null; do
+                echo "$(date): order-svc:8080 not ready, retrying in 3s..."
+                sleep 3
+              done
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+      containers:
+        - name: payment
+          image: registry-cn-shanghai.siflow.cn/k8s-dev/busybox:latest
+          command: ["sh", "-c", "while true; do nc -l -p 8080 2>/dev/null; sleep 0.1; done"]
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-svc
+  namespace: fault-demo
+spec:
+  selector:
+    app: payment-svc
+  ports:
+    - port: 8080
+      targetPort: 8080
+
+---
+# Surface symptom: api-gateway (NOT part of the cycle)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  namespace: fault-demo
+  labels:
+    app: api-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+    spec:
+      containers:
+        - name: gateway
+          image: registry-cn-shanghai.siflow.cn/k8s-dev/busybox:latest
+          command:
+            - sh
+            - -c
+            - |
+              if ! nc -z -w 5 order-svc 8080 2>/dev/null; then
+                echo "[$(date)] FATAL: Order service unavailable."
+                exit 1
+              fi
+              while true; do sleep 10; done

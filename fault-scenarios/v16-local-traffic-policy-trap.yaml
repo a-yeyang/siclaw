@@ -1,0 +1,237 @@
+# ============================================================
+# v16: The Local Traffic Policy Trap
+# Difficulty: EXTREME | Type: Service Traffic Policy + Topology
+#
+# Scenario: Data platform for ML feature serving. All naming is
+# production-realistic.
+#
+# Root Cause: Service "feature-store" has internalTrafficPolicy: Local
+#   This means kube-proxy ONLY routes traffic to endpoints on the
+#   SAME NODE as the client. feature-store pods are on nodepool-061,
+#   but prediction-worker pods are on nodepool-062 (anti-affinity).
+#   → kube-proxy on nodepool-062 has no local endpoints → refused.
+#
+# Why this is hard:
+#   1. Service HAS endpoints (looks healthy!)
+#   2. Backend pods are Running 1/1 (looks healthy!)
+#   3. Error is "connection refused" — same as many other issues
+#   4. Root cause is ONE obscure field: internalTrafficPolicy: Local
+#   5. Requires correlating client node vs server node locations
+#   6. Most SREs never check internalTrafficPolicy
+#
+# Fix: Remove internalTrafficPolicy: Local from the Service
+#   (or change to Cluster which is the default)
+#
+# Cleanup: kubectl delete ns data-platform
+# ============================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: data-platform
+  labels:
+    team: ml-infrastructure
+    environment: production
+
+---
+# ============================================================
+# feature-store: healthy backend pinned to nodepool-061
+# Has internalTrafficPolicy: Local — the root cause
+# ============================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: feature-store
+  namespace: data-platform
+  labels:
+    app: feature-store
+    component: storage
+  annotations:
+    description: "Online feature store — serves pre-computed ML features"
+    version: "4.2.1"
+    team: "feature-engineering"
+    data-locality: "Co-located with NFS storage on nodepool-061"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: feature-store
+  template:
+    metadata:
+      labels:
+        app: feature-store
+        component: storage
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: nodepool-061
+      containers:
+        - name: store
+          image: registry-cn-shanghai.siflow.cn/k8s-dev/busybox:latest
+          command:
+            - sh
+            - -c
+            - |
+              echo "[$(date)] Feature Store v4.2.1 running"
+              echo "[$(date)] Serving features on port 8080"
+              while true; do nc -l -p 8080 2>/dev/null; sleep 0.1; done
+          ports:
+            - containerPort: 8080
+              name: http
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 200m
+              memory: 128Mi
+
+---
+# The trap: internalTrafficPolicy: Local
+# Annotation makes it look intentional (performance optimization)
+apiVersion: v1
+kind: Service
+metadata:
+  name: feature-store
+  namespace: data-platform
+  labels:
+    app: feature-store
+  annotations:
+    description: "Feature store endpoint"
+    networking-note: "Local traffic policy enabled for reduced cross-node latency (PERF-1204)"
+spec:
+  selector:
+    app: feature-store
+  internalTrafficPolicy: Local
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http
+
+---
+# ============================================================
+# prediction-worker: scheduled AWAY from feature-store
+# Anti-affinity ensures it lands on nodepool-062
+# → internalTrafficPolicy: Local means no route to feature-store
+# ============================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prediction-worker
+  namespace: data-platform
+  labels:
+    app: prediction-worker
+    component: compute
+  annotations:
+    description: "Batch prediction worker — fetches features and runs inference"
+    version: "2.6.0"
+    team: "ml-serving"
+    scheduling-note: "Anti-affinity with feature-store to separate compute from storage"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: prediction-worker
+  template:
+    metadata:
+      labels:
+        app: prediction-worker
+        component: compute
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: feature-store
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: worker
+          image: registry-cn-shanghai.siflow.cn/k8s-dev/busybox:latest
+          command:
+            - sh
+            - -c
+            - |
+              echo "[$(date)] Prediction Worker v2.6.0 starting..."
+              echo "[$(date)] Fetching features from feature-store:8080..."
+              if ! nc -z -w 5 feature-store 8080 2>/dev/null; then
+                echo "[$(date)] ERROR: Cannot connect to feature-store:8080"
+                echo "[$(date)] FATAL: Feature store unreachable. Cannot run predictions."
+                exit 1
+              fi
+              echo "[$(date)] Features loaded. Running inference loop..."
+              while true; do sleep 10; done
+          ports:
+            - containerPort: 8080
+              name: http
+          resources:
+            requests:
+              cpu: 200m
+              memory: 128Mi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prediction-worker
+  namespace: data-platform
+spec:
+  selector:
+    app: prediction-worker
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http
+
+---
+# ============================================================
+# Layer 1: serving-gateway — CrashLoopBackOff (surface symptom)
+# ============================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: serving-gateway
+  namespace: data-platform
+  labels:
+    app: serving-gateway
+    component: api
+  annotations:
+    description: "Serving gateway — routes prediction requests to workers"
+    version: "1.3.0"
+    team: "ml-serving"
+    oncall: "ml-oncall"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: serving-gateway
+  template:
+    metadata:
+      labels:
+        app: serving-gateway
+        component: api
+    spec:
+      containers:
+        - name: gateway
+          image: registry-cn-shanghai.siflow.cn/k8s-dev/busybox:latest
+          command:
+            - sh
+            - -c
+            - |
+              echo "[$(date)] Serving Gateway v1.3.0 starting..."
+              echo "[$(date)] Checking prediction-worker..."
+              if ! nc -z -w 5 prediction-worker 8080 2>/dev/null; then
+                echo "[$(date)] ERROR: Cannot connect to prediction-worker:8080"
+                echo "[$(date)] FATAL: Prediction workers unavailable."
+                exit 1
+              fi
+              echo "[$(date)] Connected. Routing predictions..."
+              while true; do sleep 10; done
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
