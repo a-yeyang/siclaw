@@ -3455,8 +3455,20 @@ export function createRpcMethods(
       }
     }
 
-    // Update DB metadata (dirName is immutable after creation)
+    // Sync dirName in DB when name changes (content is in DB, not on disk)
+    let newDirName: string | undefined;
+    if (newName !== undefined && newName !== meta.name) {
+      newDirName = newName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "");
+    }
+
+    // Update DB metadata
     const updates: Record<string, unknown> = {};
+    if (newDirName && newDirName !== meta.dirName) {
+      updates.dirName = newDirName;
+    }
     // Name: params.name is authoritative; extract from frontmatter as fallback
     if (newName !== undefined) {
       updates.name = newName;
