@@ -230,6 +230,16 @@ export function createProposeHypothesesTool(dpState: DpState): ToolDefinition {
     async execute(_toolCallId, params) {
       const isDpMode = dpState.status !== "idle";
 
+      // Reject in normal mode — hypotheses should be stated in text, not via tool
+      if (!isDpMode) {
+        return {
+          content: [{ type: "text" as const, text:
+            "propose_hypotheses is only available during Deep Investigation mode. " +
+            "State your hypotheses directly in your text response instead." }],
+          details: {},
+        };
+      }
+
       const { hypotheses: rawHypotheses, triageContext } = params as {
         hypotheses: Array<{ id: string; text: string; confidence: number; description?: string }>;
         triageContext?: string;
@@ -243,20 +253,17 @@ export function createProposeHypothesesTool(dpState: DpState): ToolDefinition {
         return true;
       });
 
-      // Write state in DP mode
-      if (isDpMode) {
-        dpState.hypothesesDraft = hypotheses;
-        if (triageContext) dpState.triageContextDraft = triageContext;
-        dpState.status = "awaiting_confirmation";
-        dpState.round = (dpState.round ?? 0) + 1;
-        syncChecklistFromStatus(dpState);
-      }
+      // Write state (isDpMode guaranteed true at this point)
+      dpState.hypothesesDraft = hypotheses;
+      if (triageContext) dpState.triageContextDraft = triageContext;
+      dpState.status = "awaiting_confirmation";
+      dpState.round = (dpState.round ?? 0) + 1;
+      syncChecklistFromStatus(dpState);
 
-      const responseText = isDpMode
-        ? "Hypotheses presented to user. You MUST wait for the user's next message before proceeding. " +
-          "The user will either: (1) confirm to proceed with deep_search, (2) provide feedback to adjust hypotheses, " +
-          "or (3) ask to skip. Do NOT call deep_search until the user explicitly confirms."
-        : "Hypotheses presented to user. Decide whether to proceed based on user engagement.";
+      const responseText =
+        "Hypotheses presented to user. You MUST wait for the user's next message before proceeding. " +
+        "The user will either: (1) confirm to proceed with deep_search, (2) provide feedback to adjust hypotheses, " +
+        "or (3) ask to skip. Do NOT call deep_search until the user explicitly confirms.";
 
       return {
         content: [{ type: "text" as const, text: responseText }],
