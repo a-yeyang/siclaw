@@ -270,6 +270,15 @@ export function createHttpServer(sessionManager: AgentBoxSessionManager): http.S
     if (body.modelConfig && body.modelProvider && managed.brain.registerProvider) {
       try {
         managed.brain.registerProvider(body.modelProvider, body.modelConfig);
+        // Log model compat for debugging thinking format
+        const models = (body.modelConfig as any)?.models as Array<{ id: string; compat?: Record<string, unknown> }> | undefined;
+        if (models) {
+          for (const m of models) {
+            if (m.compat && Object.keys(m.compat).length > 0) {
+              console.log(`[agentbox-http] Model "${m.id}" compat: ${JSON.stringify(m.compat)}`);
+            }
+          }
+        }
         console.log(`[agentbox-http] Registered provider "${body.modelProvider}" from gateway DB config`);
         // Update LLM config ref so deep_search sub-agents follow the main model
         const mc = body.modelConfig as Record<string, unknown>;
