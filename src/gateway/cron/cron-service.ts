@@ -10,7 +10,7 @@ import crypto from "node:crypto";
 import { CronScheduler, type CronJobRow } from "../../cron/cron-scheduler.js";
 import type { ConfigRepository } from "../db/repositories/config-repo.js";
 import type { NotificationRepository } from "../db/repositories/notification-repo.js";
-import { ChatRepository } from "../db/repositories/chat-repo.js";
+import type { ChatRepository } from "../db/repositories/chat-repo.js";
 import { CRON_LIMITS } from "../../cron/cron-limits.js";
 
 const EXECUTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
@@ -202,7 +202,7 @@ export class CronService {
         sessionId,
       });
     } catch (runErr) {
-      console.warn("[cron-service] Failed to insert cron run:", runErr instanceof Error ? runErr.message : runErr);
+      console.warn(`[cron-service] Failed to insert cron run (sessionId=${sessionId}):`, runErr instanceof Error ? runErr.message : runErr);
     }
 
     // Create notification

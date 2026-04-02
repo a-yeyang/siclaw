@@ -3,7 +3,7 @@
  */
 
 import crypto from "node:crypto";
-import { eq, ne, desc, and, lt, lte, gte, isNull, isNotNull, or, like, inArray, sql } from "drizzle-orm";
+import { eq, desc, and, lt, lte, gte, isNull, isNotNull, or, like, inArray, sql } from "drizzle-orm";
 import type { Database } from "../index.js";
 import { sessions, messages, users, sessionStats } from "../schema.js";
 
@@ -11,7 +11,7 @@ export class ChatRepository {
   constructor(private db: Database) {}
 
   async listSessions(userId: string, limit = 20, workspaceId?: string) {
-    const conditions = [eq(sessions.userId, userId), isNull(sessions.deletedAt), ne(sessions.source, "cron")];
+    const conditions = [eq(sessions.userId, userId), isNull(sessions.deletedAt), eq(sessions.source, "pilot")];
     if (workspaceId) {
       conditions.push(eq(sessions.workspaceId, workspaceId));
     }

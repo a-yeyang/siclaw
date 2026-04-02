@@ -97,7 +97,8 @@ export async function consumeAgentSse(opts: ConsumeAgentSseOptions): Promise<Sse
           ?.filter((c) => c.type === "text")
           .map((c) => c.text ?? "")
           .join("") ?? "";
-      const toolName = (evt.toolName as string) || "tool";
+      // Normalize key: pi-agent uses toolName, claude-sdk may use name
+      const toolName = (evt.toolName as string) || (evt.name as string) || "tool";
 
       let outcome: "success" | "error" | "blocked" = "success";
       if (toolResult?.details?.blocked) outcome = "blocked";
