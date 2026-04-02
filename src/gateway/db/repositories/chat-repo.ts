@@ -90,12 +90,13 @@ export class ChatRepository {
         )
       : eq(messages.sessionId, sessionId);
 
-    // Fetch newest N rows, then reverse to chronological order
+    // Fetch newest N rows, then reverse to chronological order.
+    // Use id as tiebreaker for messages with the same timestamp (second-level precision).
     const rows = await this.db
       .select()
       .from(messages)
       .where(where)
-      .orderBy(desc(messages.timestamp))
+      .orderBy(desc(messages.timestamp), desc(messages.id))
       .limit(limit);
     return rows.reverse();
   }
@@ -111,7 +112,9 @@ export class ChatRepository {
     outcome?: "success" | "error" | "blocked";
     durationMs?: number;
   }) {
-    const id = crypto.randomUUID();
+    // Time-prefixed ID: ensures chronological ordering by id for same-second messages.
+    // Format: <ms-hex-8>-<random-uuid> — lexicographic order = insertion order.
+    const id = `${Date.now().toString(16).padStart(12, "0")}-${crypto.randomUUID()}`;
     await this.db.insert(messages).values({
       id,
       sessionId: msg.sessionId,
