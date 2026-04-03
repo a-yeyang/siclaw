@@ -4623,6 +4623,12 @@ export function createRpcMethods(
       }
     }
 
+    // Early name conflict check — reject before creating staging snapshot
+    if (!existingGlobal) {
+      const sourceOriginId = (meta as any).originId ?? meta.id;
+      await rejectCrossOriginNameConflict(meta.name, sourceOriginId);
+    }
+
     // Snapshot → staging-contribution (separate from submit staging, no stagingVersion bump)
     const message = (params.message as string | undefined)?.trim() || null;
     await skillContentRepo.copy(skillId, sourceTag, "staging-contribution");

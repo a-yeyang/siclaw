@@ -116,12 +116,8 @@ export function useSkills(sendRpc: RpcSendFn, workspaceId?: string): UseSkillsRe
     }, [sendRpc, loadSkills, workspaceId]);
 
     const approveSkill = useCallback(async (skill: Skill) => {
-        try {
-            await sendRpc('skill.review', { id: String(skill.id), decision: 'approve', workspaceId });
-            await loadSkills();
-        } catch (err) {
-            console.error('[useSkills] approveSkill failed:', err);
-        }
+        await sendRpc('skill.review', { id: String(skill.id), decision: 'approve', workspaceId });
+        await loadSkills();
     }, [sendRpc, loadSkills, workspaceId]);
 
     const rejectSkill = useCallback(async (skill: Skill, reason?: string) => {

@@ -2358,12 +2358,9 @@ describe("Skill Lifecycle RPC — Contribute Guards", () => {
     });
     await contentRepo.save(globalId, "published", { specs: "# Global" });
 
-    // Contribute itself succeeds (queues for review)
-    await h.call("skill.contribute", { id });
-
-    // Approve fails — same name, different origin in global
+    // Contribute rejects early — same name, different origin in global
     await expect(
-      h.callAsAdmin("skill.approveContribute", { id }),
+      h.call("skill.contribute", { id }),
     ).rejects.toThrow(/already exists/);
   });
 });
