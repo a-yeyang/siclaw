@@ -1,7 +1,6 @@
-# Gateway Docker Image — multi-stage build
+# Gateway Docker Image — API-only (no frontend)
 # Stage 1: backend build (tsc)
-# Stage 2: frontend build (vite)
-# Stage 3: production runtime
+# Stage 2: production runtime
 
 # ── Backend build stage ─────────────────────────────────────────
 FROM node:22-slim AS backend-builder
@@ -19,19 +18,6 @@ COPY src/ ./src/
 # Backend build (tsc)
 RUN npx tsc
 
-# ── Frontend build stage ────────────────────────────────────────
-FROM node:22-slim AS frontend-builder
-
-WORKDIR /app
-
-# Frontend deps (cached unless web/package*.json changes)
-COPY src/gateway/web/package*.json ./
-RUN npm install
-
-# Copy frontend source and build
-COPY src/gateway/web/ ./
-RUN npm run build
-
 # ── Production stage ─────────────────────────────────────────────
 FROM node:22-slim
 
@@ -47,9 +33,6 @@ RUN npm ci --omit=dev
 
 # Copy compiled JS from backend builder
 COPY --from=backend-builder /app/dist/ ./dist/
-
-# Copy web frontend from frontend builder
-COPY --from=frontend-builder /app/dist/ ./dist/gateway/web/dist/
 
 # Copy builtin skills + scripts
 COPY skills/core/ ./skills/core/
