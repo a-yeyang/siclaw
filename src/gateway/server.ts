@@ -2,7 +2,7 @@ import http from "node:http";
 import https from "node:https";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+
 import { WebSocketServer, WebSocket } from "ws";
 import type { GatewayConfig } from "./config.js";
 import type { AgentBoxManager } from "./agentbox/manager.js";
@@ -40,22 +40,6 @@ import { emitDiagnostic } from "../shared/diagnostic-events.js";
 import { checkMetricsAuth } from "../shared/metrics.js"; // also registers metrics subscriber (side-effect)
 import { MetricsAggregator } from "./metrics-aggregator.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// Static files: web React build
-// Production: dist/gateway/web/dist/  Dev: src/gateway/web/dist/
-const WEB_DIR = fs.existsSync(path.join(__dirname, "web", "dist", "index.html"))
-  ? path.join(__dirname, "web", "dist")
-  : path.join(__dirname, "..", "..", "src", "gateway", "web", "dist");
-
-const MIME_TYPES: Record<string, string> = {
-  ".html": "text/html; charset=utf-8",
-  ".js": "application/javascript; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".json": "application/json; charset=utf-8",
-  ".png": "image/png",
-  ".svg": "image/svg+xml",
-  ".ico": "image/x-icon",
-};
 
 const MAX_FEEDBACK_BODY = 512 * 1024; // 512KB
 
@@ -118,43 +102,6 @@ function handleFeedbackPost(
   });
 }
 
-function serveStatic(res: http.ServerResponse, urlPath: string, frameSrc?: string | null): void {
-  const withoutQuery = urlPath.split("?")[0];
-  const safePath = path.normalize(withoutQuery).replace(/^(\.\.(\/|\\|$))+/, "");
-  let filePath = path.join(WEB_DIR, safePath === "/" ? "index.html" : safePath);
-
-  // Prevent path traversal
-  if (!filePath.startsWith(WEB_DIR)) {
-    res.writeHead(403);
-    res.end("Forbidden");
-    return;
-  }
-
-  // SPA fallback: if file not found and no extension, serve index.html
-  if (!fs.existsSync(filePath)) {
-    const ext = path.extname(filePath);
-    if (!ext) {
-      // Client-side route, serve index.html
-      filePath = path.join(WEB_DIR, "index.html");
-    }
-  }
-
-  if (!fs.existsSync(filePath)) {
-    res.writeHead(404);
-    res.end("Not Found");
-    return;
-  }
-
-  const ext = path.extname(filePath);
-  const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
-  const content = fs.readFileSync(filePath);
-  const headers: Record<string, string> = { "Content-Type": contentType };
-  if (frameSrc && contentType.startsWith("text/html")) {
-    headers["Content-Security-Policy"] = `frame-src 'self' ${frameSrc}`;
-  }
-  res.writeHead(200, headers);
-  res.end(content);
-}
 
 export interface GatewayServer {
   httpServer: http.Server;
@@ -397,18 +344,6 @@ export async function startGateway(opts: StartGatewayOptions): Promise<GatewaySe
     localSpawner.setKnowledgeIndexer(knowledgeIndexer);
   }
 
-  // CSP frame-src cache for Grafana iframe embedding
-  let cachedFrameSrc: string | null = null;
-  const refreshCspCache = async () => {
-    if (!sysConfigRepo) return;
-    try {
-      const url = await sysConfigRepo.get("system.grafanaUrl");
-      cachedFrameSrc = url ? new URL(url).origin : null;
-    } catch {
-      cachedFrameSrc = null;
-    }
-  };
-  await refreshCspCache();
 
   // Metrics config cache — Gateway reads from DB, falls back to env var
   let cachedMetricsToken: string | undefined;
@@ -436,7 +371,6 @@ export async function startGateway(opts: StartGatewayOptions): Promise<GatewaySe
     rpcMethods.set("system.saveSection", async (params, context) => {
       const result = await origSaveSection(params, context);
       const section = (params as { section?: string }).section;
-      if (section === "system") await refreshCspCache();
       if (section === "metrics") await refreshMetricsConfig();
       if (section === "sso") await refreshSsoCache();
       return result;
@@ -1102,8 +1036,9 @@ export async function startGateway(opts: StartGatewayOptions): Promise<GatewaySe
       }
     }
 
-    // Serve static web UI
-    serveStatic(res, url, cachedFrameSrc);
+    // No frontend — API-only server
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Not Found" }));
   });
 
   // WebSocket server
