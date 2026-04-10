@@ -42,7 +42,7 @@ help: ## Show this help
 tui: ## Run TUI agent (interactive terminal)
 	npx tsx src/cli-main.ts
 
-gateway: build-web ## Run Gateway server (multi-user, local spawner)
+gateway: ## Run Gateway server (multi-user, local spawner)
 	npx tsx src/gateway-main.ts
 
 dev: tui ## Alias for tui
@@ -50,7 +50,7 @@ dev: tui ## Alias for tui
 # ==================== Build ====================
 ##@ Build
 
-build: build-ts build-web ## Compile TypeScript + Web frontend
+build: build-ts ## Compile TypeScript backend
 
 build-ts: ## Compile TypeScript
 	npx tsc --project tsconfig.json
@@ -125,7 +125,7 @@ status: ## Show K8s deployment status
 ##@ Clean
 
 clean: ## Remove build artifacts
-	rm -rf dist *.tsbuildinfo src/gateway/web/dist
+	rm -rf dist *.tsbuildinfo
 
 # ── All targets are phony (no file outputs) ──
 .PHONY: help tui gateway dev build build-ts build-web \
