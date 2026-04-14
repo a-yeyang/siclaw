@@ -546,6 +546,45 @@ export const feedbackReports = mysqlTable("feedback_reports", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// ─── DevEval Experiments ────────────────────────────
+
+export const devEvalExperiments = mysqlTable("dev_eval_experiments", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  userId: varchar("user_id", { length: 64 }).notNull().references(() => users.id),
+  workspaceId: varchar("workspace_id", { length: 64 }).notNull(),
+  prompt: text("prompt").notNull(),
+  caseCount: int("case_count").notNull().default(0),
+  status: varchar("status", { length: 32 }).notNull().default("draft"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// ─── DevEval Cases ─────────────────────────────────
+
+export const devEvalCases = mysqlTable("dev_eval_cases", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  experimentId: varchar("experiment_id", { length: 64 }).notNull().references(() => devEvalExperiments.id, { onDelete: "cascade" }),
+  caseIndex: int("case_index").notNull(),
+  title: varchar("title", { length: 255 }),
+  podName: varchar("pod_name", { length: 255 }),
+  namespace: varchar("namespace", { length: 255 }),
+  faultType: varchar("fault_type", { length: 128 }),
+  kubectlInject: text("kubectl_inject"),
+  diagnosticSteps: json("diagnostic_steps").$type<string[]>(),
+  expectedAnswer: text("expected_answer"),
+  workOrders: json("work_orders").$type<Array<{ difficulty: string; text: string }>>(),
+  selectedWorkOrder: int("selected_work_order").default(0),
+  agentSessionId: varchar("agent_session_id", { length: 64 }),
+  agentResponse: text("agent_response"),
+  agentCommands: json("agent_commands").$type<string[]>(),
+  scoreCommands: int("score_commands"),
+  scoreConclusion: int("score_conclusion"),
+  scoreReasoning: text("score_reasoning"),
+  status: varchar("status", { length: 32 }).notNull().default("generated"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 export const skillReviews = mysqlTable("skill_reviews", {
   id: varchar("id", { length: 64 }).primaryKey(),
   skillId: varchar("skill_id", { length: 64 })

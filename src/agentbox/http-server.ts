@@ -101,6 +101,9 @@ export function createHttpServer(sessionManager: AgentBoxSessionManager): http.S
   }
 
   // ── Idle self-destruct: exit when no SSE connections and no sessions for 5 min ──
+  // Only enabled inside K8s pods (KUBERNETES_SERVICE_HOST is auto-injected);
+  // in local dev mode the process stays alive until Ctrl-C.
+  const idleShutdownEnabled = !!process.env.KUBERNETES_SERVICE_HOST;
   const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
   let activeSseCount = 0;
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -113,6 +116,7 @@ export function createHttpServer(sessionManager: AgentBoxSessionManager): http.S
   }
 
   function checkIdle(): void {
+    if (!idleShutdownEnabled) return;
     if (activeSseCount === 0 && sessionManager.activeCount() === 0) {
       if (idleTimer) return; // already scheduled
       idleTimer = setTimeout(() => {

@@ -60,6 +60,7 @@ import type { MemoryIndexer } from "../memory/index.js";
 import { resolveUnderDir } from "../shared/path-utils.js";
 import { loadConfig } from "../core/config.js";
 import { type DpStatus, type DpChecklist, createChecklist, syncChecklistFromStatus, type DpState } from "../tools/workflow/dp-tools.js";
+import { registerDevEvalMethods } from "./deveval/deveval-handlers.js";
 
 export type SendToUserFn = (userId: string, event: string, payload: Record<string, unknown>) => void;
 
@@ -7329,6 +7330,16 @@ export function createRpcMethods(
       timestamp: msg.timestamp,
     };
   });
+
+  // ── DevEval (developer self-evaluation mode) ──────
+  registerDevEvalMethods(
+    methods,
+    db,
+    agentBoxManager,
+    agentBoxTlsOptions,
+    buildCredentialPayload,
+    sendToUser,
+  );
 
   return { methods, buildCredentialPayload, getSkillBundle, cleanupForWs };
 }

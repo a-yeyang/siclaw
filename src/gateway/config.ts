@@ -14,7 +14,7 @@ export interface GatewayConfig {
 }
 
 const DEFAULT_CONFIG: GatewayConfig = {
-  port: 3000,
+  port: 3001,
   host: "0.0.0.0",
   plugins: {
     paths: ["./node_modules"],
@@ -23,5 +23,9 @@ const DEFAULT_CONFIG: GatewayConfig = {
 };
 
 export function loadGatewayConfig(): GatewayConfig {
-  return { ...DEFAULT_CONFIG };
+  const config = { ...DEFAULT_CONFIG };
+  if (process.env.SICLAW_GATEWAY_PORT) {
+    config.port = parseInt(process.env.SICLAW_GATEWAY_PORT, 10);
+  }
+  return config;
 }

@@ -57,6 +57,8 @@ export const {
   mcpServers,
   feedbackReports,
   skillReviews,
+  devEvalExperiments,
+  devEvalCases,
 } = _mod;
 
 export type { ReviewFinding } from "./schema-mysql.js";

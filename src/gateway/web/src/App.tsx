@@ -22,6 +22,7 @@ import { McpServersPage } from './pages/McpServers';
 import { KnowledgePage } from './pages/Knowledge';
 import { CredentialsPage } from './pages/Environments';
 import { MetricsPage } from './pages/Metrics';
+import { DevEvalPage } from './pages/DevEval';
 
 function ComingSoonPage({ title }: { title: string }) {
     return (
@@ -78,6 +79,7 @@ const router = createBrowserRouter([
                     // { path: 'brains', element: <BrainsPage /> },  // hidden until claude-sdk brain is polished
                     { path: 'models', element: <ModelsPage /> },
                     { path: 'monitoring', element: <MetricsPage /> },
+                    { path: 'dev-eval', element: <DevEvalPage /> },
                 ],
             },
         ],

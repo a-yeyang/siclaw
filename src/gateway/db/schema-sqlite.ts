@@ -532,6 +532,45 @@ export const feedbackReports = sqliteTable("feedback_reports", {
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
 });
 
+// ─── DevEval Experiments ────────────────────────────
+
+export const devEvalExperiments = sqliteTable("dev_eval_experiments", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id),
+  workspaceId: text("workspace_id").notNull(),
+  prompt: text("prompt").notNull(),
+  caseCount: integer("case_count").notNull().default(0),
+  status: text("status").notNull().default("draft"), // "draft" | "generating" | "injecting" | "running" | "scoring" | "completed"
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+});
+
+// ─── DevEval Cases ─────────────────────────────────
+
+export const devEvalCases = sqliteTable("dev_eval_cases", {
+  id: text("id").primaryKey(),
+  experimentId: text("experiment_id").notNull().references(() => devEvalExperiments.id, { onDelete: "cascade" }),
+  caseIndex: integer("case_index").notNull(),
+  title: text("title"),
+  podName: text("pod_name"),
+  namespace: text("namespace"),
+  faultType: text("fault_type"),
+  kubectlInject: text("kubectl_inject"),
+  diagnosticSteps: text("diagnostic_steps", { mode: "json" }).$type<string[]>(),
+  expectedAnswer: text("expected_answer"),
+  workOrders: text("work_orders", { mode: "json" }).$type<Array<{ difficulty: string; text: string }>>(),
+  selectedWorkOrder: integer("selected_work_order").default(0),
+  agentSessionId: text("agent_session_id"),
+  agentResponse: text("agent_response"),
+  agentCommands: text("agent_commands", { mode: "json" }).$type<string[]>(),
+  scoreCommands: integer("score_commands"),
+  scoreConclusion: integer("score_conclusion"),
+  scoreReasoning: text("score_reasoning"),
+  status: text("status").notNull().default("generated"), // "generated" | "injected" | "running" | "completed" | "scored" | "error"
+  errorMessage: text("error_message"),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+});
+
 export const skillReviews = sqliteTable("skill_reviews", {
   id: text("id").primaryKey(),
   skillId: text("skill_id")

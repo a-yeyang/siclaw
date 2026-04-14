@@ -100,7 +100,8 @@ const DDL_STATEMENTS = [
     origin_id TEXT,
     content_hash TEXT,
     labels_json TEXT,
-    skill_space_id TEXT REFERENCES skill_spaces(id) ON DELETE SET NULL
+    skill_space_id TEXT REFERENCES skill_spaces(id) ON DELETE SET NULL,
+    commit_message TEXT
   )`,
 
   `CREATE TABLE IF NOT EXISTS channels (
@@ -268,6 +269,41 @@ const DDL_STATEMENTS = [
     summary TEXT NOT NULL,
     findings TEXT,
     decision TEXT NOT NULL CHECK(decision IN ('approve', 'reject', 'info')),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  )`,
+
+  `CREATE TABLE IF NOT EXISTS dev_eval_experiments (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    workspace_id TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    case_count INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'draft',
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+  )`,
+
+  `CREATE TABLE IF NOT EXISTS dev_eval_cases (
+    id TEXT PRIMARY KEY,
+    experiment_id TEXT NOT NULL REFERENCES dev_eval_experiments(id) ON DELETE CASCADE,
+    case_index INTEGER NOT NULL,
+    title TEXT,
+    pod_name TEXT,
+    namespace TEXT,
+    fault_type TEXT,
+    kubectl_inject TEXT,
+    diagnostic_steps TEXT,
+    expected_answer TEXT,
+    work_orders TEXT,
+    selected_work_order INTEGER DEFAULT 0,
+    agent_session_id TEXT,
+    agent_response TEXT,
+    agent_commands TEXT,
+    score_commands INTEGER,
+    score_conclusion INTEGER,
+    score_reasoning TEXT,
+    status TEXT NOT NULL DEFAULT 'generated',
+    error_message TEXT,
     created_at INTEGER NOT NULL DEFAULT (unixepoch())
   )`,
 
@@ -442,6 +478,8 @@ const INDEX_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_skill_space_members_user ON skill_space_members(user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_skill_space_members_space ON skill_space_members(skill_space_id)`,
   `CREATE INDEX IF NOT EXISTS idx_skills_skill_space ON skills(skill_space_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_dev_eval_experiments_user ON dev_eval_experiments(user_id, created_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_dev_eval_cases_experiment ON dev_eval_cases(experiment_id, case_index)`,
 ];
 
 export async function runSqliteMigrations(db: Database): Promise<void> {

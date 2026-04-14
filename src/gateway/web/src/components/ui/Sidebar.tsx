@@ -19,6 +19,7 @@ import {
     Wrench,
     BarChart3,
     BookOpen,
+    FlaskConical,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -47,6 +48,7 @@ const topItems: NavItem[] = [
     { icon: Boxes, label: 'Workspace', to: '/workspace' },
     { icon: Timer, label: 'Cron Jobs', to: '/cron' },
     { icon: Zap, label: 'Triggers', to: '/triggers' },
+    { icon: FlaskConical, label: 'DevEval', to: '/dev-eval' },
 ];
 
 const groups: NavGroup[] = [
