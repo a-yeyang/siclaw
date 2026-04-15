@@ -77,9 +77,13 @@ export function DevEvalPage() {
                         if (ame?.type === 'text_delta' && ame.delta) {
                             streamEvt.text = ame.delta;
                         }
-                    } else if (eventType === 'tool_execution_start') {
-                        streamEvt.toolName = evt.toolName as string;
-                        streamEvt.toolInput = evt.input as string;
+                    } else if (eventType === 'tool_execution_start' || eventType === 'tool_start') {
+                        streamEvt.toolName = (evt.toolName as string) || (evt.name as string);
+                        const args = evt.args as Record<string, unknown> | undefined;
+                        streamEvt.toolInput = (args?.command as string)
+                            ?? (args?.cmd as string)
+                            ?? (args?.script as string)
+                            ?? (args ? JSON.stringify(args) : '');
                     }
 
                     // Only add if there's meaningful content

@@ -374,11 +374,16 @@ export function registerDevEvalMethods(
                   if (ame?.type === "text_delta" && ame.delta) {
                     assistantText += ame.delta;
                   }
-                } else if (eventType === "tool_execution_start") {
-                  const toolInput = evt.input as string | undefined;
-                  const toolName = evt.toolName as string | undefined;
-                  if (toolName && toolInput) {
-                    agentCommands.push(`[${toolName}] ${toolInput}`);
+                } else if (eventType === "tool_execution_start" || eventType === "tool_start") {
+                  const toolName = (evt.toolName as string) || (evt.name as string);
+                  const args = evt.args as Record<string, unknown> | undefined;
+                  if (toolName) {
+                    // Extract the actual command from common arg shapes
+                    const cmd = (args?.command as string)
+                      ?? (args?.cmd as string)
+                      ?? (args?.script as string)
+                      ?? (args ? JSON.stringify(args) : "");
+                    agentCommands.push(`[${toolName}] ${cmd}`);
                   }
                 }
                 // Forward ALL events to frontend for real-time streaming display
