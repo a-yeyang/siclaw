@@ -312,5 +312,245 @@ kubectl describe node node-3
 1. 优先排查 `node-3` kubelet 与 API Server 的连通性:检查 kubelet 进程、节点网络、`kubelet.service` 日志;
 2. 短期缓解:放宽 Pod 的 nodeAffinity/selector,让它能调度到其他 Ready 节点;
 3. 长期改进:对关键业务添加 `tolerations` 或扩展可调度节点池,避免单节点故障阻塞调度。
+
+---
+
+## Case: hpa-quota-deadlock-005
+
+```yaml
+id: hpa-quota-deadlock-005
+title: HPA 想扩容但被 ResourceQuota 卡死(多源因果)
+reproducible: false
+stubMode: knowledge-qa
+stubReason: "需要预先配置 namespace 级 ResourceQuota + HPA + 高负载,在共享测试集群里组装代价过高,改用知识问答模式"
+faultType: HPAQuotaConflict
+namespace: payment
+podShortName: ignored
+tags: [hpa, quota, scaling, multi-cause, p1]
+passThreshold:
+  commands: 0
+  conclusion: 4
 ```
+
+### 工单描述
+
+- **green**: 服务 `payment-api`(namespace `payment`)流量翻倍后 HPA 没有扩出新副本,`kubectl get hpa` 显示 CURRENT 95% / TARGET 70% / REPLICAS 3,期望 6。监控里看到大量 5xx,请定位为什么 HPA 不生效。
+- **yellow**: 大促期间 `payment-api` 顶不住,SRE 反馈"自动扩容好像坏了",请帮忙看看。
+
+### 集群现状
+
+```
+$ kubectl get hpa -n payment
+NAME           REFERENCE                  TARGETS    MINPODS   MAXPODS   REPLICAS   AGE
+payment-api    Deployment/payment-api     95%/70%    3         10        3          47d
+
+$ kubectl describe hpa payment-api -n payment
+Name:                                                  payment-api
+Namespace:                                             payment
+Reference:                                             Deployment/payment-api
+Metrics:                                               ( current / target )
+  resource cpu on pods (as a percentage of request):   95% (475m) / 70%
+Min replicas:                                          3
+Max replicas:                                          10
+Deployment pods:                                       3 current / 6 desired
+Conditions:
+  Type            Status  Reason               Message
+  ----            ------  ------               -------
+  AbleToScale     True    SucceededRescale     the HPA controller was able to update the target scale to 6
+  ScalingActive   True    ValidMetricFound     the HPA was able to successfully calculate a replica count
+  ScalingLimited  False   DesiredWithinRange   the desired count is within the acceptable range
+Events:
+  Type     Reason             Age                    From                       Message
+  ----     ------             ----                   ----                       -------
+  Normal   SuccessfulRescale  3m                     horizontal-pod-autoscaler  New size: 6; reason: cpu resource utilization (percentage of request) above target
+
+$ kubectl get deploy payment-api -n payment
+NAME           READY   UP-TO-DATE   AVAILABLE   AGE
+payment-api    3/6     6            3           47d
+
+$ kubectl get rs -n payment -l app=payment-api
+NAME                       DESIRED   CURRENT   READY   AGE
+payment-api-7c8f9d4b6      6         3         3       47d
+
+$ kubectl describe rs payment-api-7c8f9d4b6 -n payment | tail -15
+Events:
+  Type     Reason            Age                  From                   Message
+  ----     ------            ----                 ----                   -------
+  Warning  FailedCreate      30s (x12 over 3m)   replicaset-controller  Error creating: pods "payment-api-7c8f9d4b6-xxxxx" is forbidden: exceeded quota: payment-quota, requested: pods=1, used: pods=5, limited: pods=5
+
+$ kubectl get resourcequota -n payment
+NAME             AGE   REQUEST                                    LIMIT
+payment-quota    180d  pods: 5/5, requests.cpu: 2500m/4000m       limits.cpu: 5000m/8000m
+
+$ kubectl describe resourcequota payment-quota -n payment
+Name:            payment-quota
+Namespace:       payment
+Resource         Used   Hard
+--------         ----   ----
+limits.cpu       5000m  8000m
+limits.memory    10Gi   16Gi
+pods             5      5
+requests.cpu     2500m  4000m
+requests.memory  5Gi    8Gi
+
+$ kubectl get pods -n payment
+NAME                            READY   STATUS    RESTARTS   AGE
+payment-api-7c8f9d4b6-aaaaa     1/1     Running   0          12d
+payment-api-7c8f9d4b6-bbbbb     1/1     Running   0          12d
+payment-api-7c8f9d4b6-ccccc     1/1     Running   0          12d
+payment-job-runner-1            1/1     Running   0          5h
+payment-cron-flush-x9k2t        1/1     Running   0          22h
+```
+
+### 题解 kubectl
+
+```bash
+kubectl get hpa payment-api -n payment
+kubectl describe hpa payment-api -n payment
+kubectl get rs -n payment -l app=payment-api
+kubectl describe rs <new-rs-name> -n payment
+kubectl get resourcequota -n payment
+kubectl describe resourcequota payment-quota -n payment
+kubectl get pods -n payment
+```
+
+### 期望结论
+
+**根因(多源汇聚)**:
+1. **HPA 已正确决策扩容**:CPU 利用率 95% 远超目标 70%,HPA 把 Deployment 的 desired replicas 从 3 调到 6(events 里的 `SuccessfulRescale` 证明决策成功);
+2. **ReplicaSet 创建新 Pod 被拒**:replicaset-controller 报 `exceeded quota: payment-quota, requested: pods=1, used: pods=5, limited: pods=5`——namespace 的 `payment-quota` 把 pods 总数限制在 5;
+3. **Quota 已被其它 Pod 吃满**:除了 3 个 `payment-api` 副本,namespace 里还有 `payment-job-runner` 和 `payment-cron-flush` 各占 1 个 Pod 额度,刚好用满 5/5。
+
+两条因果链交汇于 ResourceQuota:HPA 决策(A) + 其他 Pod 占用配额(B) → ReplicaSet 创建被拒(C) → Deployment 副本数停在 3(D) → 业务 5xx(E)。HPA 本身没有问题,问题在 namespace 的 quota 容量规划。
+
+**修复建议**(按优先级):
+1. **立即缓解**:把 `payment-quota.spec.hard.pods` 从 5 提到 12(留出 HPA max 10 + 其他工作负载 2 的余量),同时按比例上调 `requests.cpu` / `requests.memory` / `limits.*`,否则只调 pods 又会被 cpu/memory quota 卡住;
+2. **结构调整**:把 batch 类工作负载(job-runner、cron-flush)迁到独立 namespace `payment-batch`,避免与在线服务争抢配额;
+3. **告警补齐**:对 `kube_resourcequota{type="used"} / kube_resourcequota{type="hard"} > 0.8` 加 Prometheus 告警,quota 即将耗尽时提前通知,避免 HPA 静默失败。
+
+---
+
+## Case: dns-pdb-cascade-006
+
+```yaml
+id: dns-pdb-cascade-006
+title: CoreDNS 被 PDB 卡住无法滚动 → 业务大面积超时(链式因果)
+reproducible: false
+stubMode: knowledge-qa
+stubReason: "需要复现 CoreDNS Deployment + PDB + 节点维护多组件串联,共享集群无法安全模拟,改用知识问答模式"
+faultType: DNSCascadeFailure
+namespace: kube-system
+podShortName: ignored
+tags: [dns, pdb, cascade, multi-step, p0]
+passThreshold:
+  commands: 0
+  conclusion: 4
+```
+
+### 工单描述
+
+- **green**: 多个业务 namespace 反馈"调用外部依赖大量超时",`kubectl logs` 看到 `lookup api.partner.com: i/o timeout`。CoreDNS Pod 一个 Running 一个 CrashLoopBackOff,SRE 怀疑 DNS 出问题,请定位根因。
+- **yellow**: 今天上午开始集群里很多服务都很慢,业务方说"接口经常超时",运维已经在重启服务但没用,请排查。
+
+### 集群现状
+
+```
+$ kubectl get pods -n kube-system -l k8s-app=kube-dns
+NAME                       READY   STATUS             RESTARTS       AGE
+coredns-7c8f9d4b6-aaaaa    1/1     Running            0              35d
+coredns-7c8f9d4b6-bbbbb    0/1     CrashLoopBackOff   42 (2m ago)    35d
+
+$ kubectl logs coredns-7c8f9d4b6-bbbbb -n kube-system --previous | tail -20
+[INFO] plugin/reload: Running configuration SHA512 = 1a2b3c...
+[FATAL] plugin/loop: Loop (127.0.0.1:46253 -> :53) detected for zone ".", see https://coredns.io/plugins/loop#troubleshooting. Query: "HINFO 8112946459558236798.6379421158471527516."
+
+$ kubectl get cm coredns -n kube-system -o yaml | grep -A 20 'Corefile:'
+Corefile: |
+    .:53 {
+        errors
+        health {
+           lameduck 5s
+        }
+        ready
+        kubernetes cluster.local in-addr.arpa ip6.arpa {
+           pods insecure
+           fallthrough in-addr.arpa ip6.arpa
+           ttl 30
+        }
+        prometheus :9153
+        forward . /etc/resolv.conf
+        cache 30
+        loop
+        reload
+        loadbalance
+    }
+
+$ kubectl get deploy coredns -n kube-system
+NAME       READY   UP-TO-DATE   AVAILABLE   AGE
+coredns    1/2     2            1           365d
+
+$ kubectl rollout status deploy/coredns -n kube-system
+Waiting for deployment "coredns" rollout to finish: 1 of 2 updated replicas are available...
+
+$ kubectl get pdb -n kube-system
+NAME                  MIN AVAILABLE   MAX UNAVAILABLE   ALLOWED DISRUPTIONS   AGE
+coredns-pdb           2               N/A               0                     365d
+
+$ kubectl describe pdb coredns-pdb -n kube-system
+Name:           coredns-pdb
+Namespace:      kube-system
+Min available:  2
+Selector:       k8s-app=kube-dns
+Status:
+    Allowed disruptions:  0
+    Current:              1
+    Desired:              2
+    Total:                2
+
+$ kubectl get nodes
+NAME      STATUS                     ROLES    AGE    VERSION
+node-a    Ready,SchedulingDisabled   worker   400d   v1.28.4
+node-b    Ready                      worker   400d   v1.28.4
+node-c    Ready                      worker   400d   v1.28.4
+
+$ kubectl get pod coredns-7c8f9d4b6-bbbbb -n kube-system -o jsonpath='{.spec.nodeName}'
+node-a
+
+# 业务侧症状(随便挑一个 namespace)
+$ kubectl logs -n payment payment-api-xxx --tail=10
+2026-04-15T06:12:03 ERROR resolving api.partner.com: lookup api.partner.com: i/o timeout
+2026-04-15T06:12:08 ERROR resolving api.partner.com: lookup api.partner.com: i/o timeout
+```
+
+### 题解 kubectl
+
+```bash
+kubectl get pods -n kube-system -l k8s-app=kube-dns
+kubectl logs coredns-<crashing-pod> -n kube-system --previous
+kubectl get cm coredns -n kube-system -o yaml
+kubectl get pdb -n kube-system
+kubectl describe pdb coredns-pdb -n kube-system
+kubectl get nodes
+kubectl get pod <crashing-coredns> -n kube-system -o jsonpath='{.spec.nodeName}'
+```
+
+### 期望结论
+
+**根因(链式因果 A→B→C→D→E)**:
+
+A. **节点 `node-a` 处于 SchedulingDisabled**(`kubectl get nodes` 显示 `Ready,SchedulingDisabled`),正在做节点维护(cordon);
+B. **CoreDNS 副本之一 `coredns-...-bbbbb` 被调度在 node-a 上,且陷入 CrashLoopBackOff**——日志 `[FATAL] plugin/loop: Loop (127.0.0.1:46253 -> :53) detected` 指向典型问题:Corefile 中 `forward . /etc/resolv.conf`,而该节点的 `/etc/resolv.conf` 把 nameserver 指向了集群本身的 service IP(或 127.0.0.1),CoreDNS 把查询转回自己,形成 DNS 转发回环;
+C. **PDB `coredns-pdb` 设置 `minAvailable: 2`**,而当前只有 1 个 CoreDNS Pod 健康(`Allowed disruptions: 0`),Deployment Controller / 节点驱逐 / 滚动更新都被 PDB 拒绝,**坏副本无法被替换**;
+D. **DNS 解析能力降到 50%**:集群内只剩一个 CoreDNS endpoint 服务全集群所有查询,kube-proxy 的 service 负载均衡仍把 50% 流量打向已挂掉的 endpoint(直到 readiness/health 摘除生效),期间请求 timeout;
+E. **业务侧表现为外部依赖大面积 5xx / timeout**(payment-api 日志里的 `lookup ... i/o timeout`)。
+
+链路:节点 cordon(A) → CoreDNS Pod 配置触发 forward loop(B) → PDB 阻止替换坏 Pod(C) → DNS 容量不足(D) → 业务超时(E)。
+
+**修复建议**(按优先级,先恢复后根治):
+
+1. **立即恢复(P0)**:临时把 PDB 改为 `maxUnavailable: 1`(或暂时删除 PDB),让 CoreDNS Deployment 把坏 Pod 替换掉;同时确认 Deployment `replicas` ≥ 2;
+2. **修 Corefile(P1)**:把 `forward . /etc/resolv.conf` 改为显式指向上游 DNS(如 `forward . 8.8.8.8 1.1.1.1` 或公司内部 DNS IP),避免依赖节点 resolv.conf 引发 loop;参考 [coredns.io/plugins/loop#troubleshooting](https://coredns.io/plugins/loop#troubleshooting);
+3. **修节点 resolv.conf(P1)**:节点上 `/etc/resolv.conf` 不应该把 cluster DNS service IP 当作 nameserver——这是 kubelet 的 `--resolv-conf` 参数应该指向的"宿主机原始 DNS",检查节点配置;
+4. **结构改进(P2)**:CoreDNS Deployment 加 anti-affinity 强制散布到不同节点,避免单节点 cordon 同时影响多副本;PDB 应基于 replicas 的相对值(`maxUnavailable: 1`),而不是绝对值(`minAvailable: 2`),避免缩容时死锁;
+5. **告警补齐(P2)**:对 `coredns_cache_misses_total` 暴增 + `coredns up{instance=...} == 0` 加告警,DNS 异常应该 5 分钟内呼叫,而不是等业务方反馈。
 

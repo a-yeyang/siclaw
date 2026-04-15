@@ -2,6 +2,7 @@
  * Evaluator — scores agent diagnostic results against expected answers using LLM
  */
 
+import { randomBytes } from "node:crypto";
 import type { AgentBoxClient } from "../agentbox/client.js";
 import { consumeAgentSse, type OnEventCallback } from "../sse-consumer.js";
 
@@ -76,7 +77,11 @@ export async function scoreCase(
     .replace("{agentCommands}", input.agentCommands.join("\n") || "(no commands proposed)")
     .replace("{agentResponse}", input.agentResponse || "(no response)");
 
-  const sessionId = `deveval-score-${Date.now()}`;
+  // Cryptographic random suffix — Date.now() collides under parallel scoring
+  // (multiple workers can hit the same millisecond), which would cause the
+  // AgentBox to treat the second call as a continuation of the first session
+  // and contaminate the scoring context across cases.
+  const sessionId = `deveval-score-${Date.now()}-${randomBytes(6).toString("hex")}`;
 
   const result = await client.prompt({
     sessionId,

@@ -38,7 +38,7 @@ export interface RunOptions {
   agentTimeoutMs?: number;
 }
 
-export type CaseOutcome = "PASS" | "FAIL" | "SKIP" | "ERROR";
+export type CaseOutcome = "PASS" | "FAIL" | "SKIP" | "ERROR" | "MISSING_CONTEXT";
 
 export interface CaseResult {
   id: string;
@@ -106,12 +106,23 @@ export async function runCase(c: ParsedCase, opts: RunOptions): Promise<CaseResu
     solutionCommands: c.private.solutionCommands,
   };
 
-  // Stubbed cases not yet supported
+  // Non-reproducible cases ALWAYS go through knowledge-QA. If the case author
+  // didn't provide '### 集群现状', we cannot evaluate the agent — surface this
+  // as MISSING_CONTEXT so it shows up as a real problem in the report (not a
+  // silent SKIP). Fixture-replay support is no longer wired (was never
+  // implemented); legacy '### Fixtures' sections are tolerated by the parser
+  // but ignored here.
   if (!c.public.reproducible) {
+    if (c.public.clusterContext) {
+      return runKnowledgeQaCase(c, opts, start, base);
+    }
     return {
       ...base,
-      outcome: "SKIP",
-      reason: `Fixture-replay (stubbed case) not yet implemented. stubReason: ${c.private.stubReason ?? "n/a"}`,
+      outcome: "MISSING_CONTEXT",
+      reason:
+        `Knowledge-QA case has no '### 集群现状' section — cannot evaluate. ` +
+        `Add a "### 集群现状" section with the relevant kubectl outputs / events / conditions ` +
+        `the agent should reason from.`,
       durationMs: Date.now() - start,
     };
   }
@@ -302,6 +313,194 @@ function kubectlEnsureNamespace(ns: string): Promise<string> {
   const manifest =
     `apiVersion: v1\nkind: Namespace\nmetadata:\n  name: ${ns}\n  labels:\n    deveval/managed: "true"\n`;
   return kubectlApply(manifest);
+}
+
+/**
+ * Run a batch of cases with bounded concurrency. Cases are independent
+ * (separate sessions, unique pod names, unique chat rooms), so parallelism is
+ * safe. Returns results in the SAME order as the input array.
+ *
+ * Concurrency defaults to 4 — high enough for ~4x speedup on case-heavy runs,
+ * low enough to stay under typical LLM API rate limits and keep kubectl /
+ * AgentBox load manageable.
+ */
+export async function runCasesBatch(
+  cases: ParsedCase[],
+  opts: Omit<RunOptions, "onProgress"> & {
+    concurrency?: number;
+    onCaseStart?: (c: ParsedCase, idx: number) => void;
+    onCaseDone?: (c: ParsedCase, r: CaseResult, idx: number) => void;
+    onCaseProgress?: (c: ParsedCase, ev: Record<string, unknown>) => void;
+  },
+): Promise<CaseResult[]> {
+  const concurrency = Math.max(1, opts.concurrency ?? 4);
+  const results: CaseResult[] = new Array(cases.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (true) {
+      const i = nextIndex++;
+      if (i >= cases.length) return;
+      const c = cases[i];
+      opts.onCaseStart?.(c, i);
+      const r = await runCase(c, {
+        ...opts,
+        onProgress: (ev) => opts.onCaseProgress?.(c, ev),
+      });
+      results[i] = r;
+      opts.onCaseDone?.(c, r, i);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, cases.length) }, () => worker()));
+  return results;
+}
+
+/**
+ * Knowledge-QA evaluation: agent receives the work order PLUS pre-recorded
+ * cluster context (kubectl outputs, events, conditions) and is asked to
+ * diagnose without touching a real cluster. Same scoring path as reproducible
+ * cases — evaluator compares agent's commands+conclusion against the gold
+ * answer in PrivateCase.
+ *
+ * Isolation contract: agent still NEVER sees expectedAnswer or solutionCommands;
+ * those go only to the scoring session.
+ */
+async function runKnowledgeQaCase(
+  c: ParsedCase,
+  opts: RunOptions,
+  start: number,
+  base: Pick<CaseResult, "id" | "title" | "reproducible" | "passThreshold" | "expectedAnswer" | "solutionCommands">,
+): Promise<CaseResult> {
+  const idx = Math.min(opts.workOrderIndex ?? 0, c.public.workOrders.length - 1);
+  const wo = c.public.workOrders[idx];
+  const vars = { runId: opts.runId, podName: "" };
+  const workOrderText = subst(wo.text, vars);
+  const namespace = subst(c.public.namespace, vars);
+  const clusterContext = c.public.clusterContext!;
+
+  let agentResponse = "";
+  const agentCommands: string[] = [];
+  try {
+    const session = await opts.chatRepo.createSession(
+      opts.userId,
+      `[Regress-QA] ${c.public.title}`,
+      opts.workspaceId,
+    );
+
+    // Knowledge-QA prompt: tell agent to reason from given context, NOT to
+    // probe a real cluster. The "[KNOWLEDGE-QA]" tag is honest disclosure —
+    // execution-mode realism is sacrificed for ability-to-evaluate scenarios
+    // we cannot inject.
+    const agentPrompt =
+      `[KNOWLEDGE-QA MODE — Namespace: ${namespace}]\n\n` +
+      `## 工单\n${workOrderText}\n\n` +
+      `## 已收集到的集群现状(Runner 提供,无需也无法访问真实集群)\n\n${clusterContext}\n\n` +
+      `请基于以上信息,给出:\n` +
+      `1. 你会用哪些 kubectl 命令进一步确认/补充信息(列出命令即可,无需执行);\n` +
+      `2. 故障的根因分析;\n` +
+      `3. 修复建议。`;
+
+    opts.onProgress?.({ type: "case_running", caseId: c.public.id, prompt: agentPrompt });
+
+    const result = await opts.client.prompt({
+      sessionId: session.id,
+      text: agentPrompt,
+      modelProvider: opts.modelProvider,
+      modelId: opts.modelId,
+      modelConfig: opts.modelConfig,
+      credentials: opts.credentials,
+    });
+
+    await consumeAgentSse({
+      client: opts.client,
+      sessionId: result.sessionId,
+      userId: opts.userId,
+      chatRepo: opts.chatRepo,
+      signal: AbortSignal.timeout(opts.agentTimeoutMs ?? 300_000),
+      onEvent(evt, eventType) {
+        if (eventType === "message_update") {
+          const ame = evt.assistantMessageEvent as { type?: string; delta?: string } | undefined;
+          if (ame?.type === "text_delta" && ame.delta) agentResponse += ame.delta;
+        } else if (eventType === "tool_execution_start" || eventType === "tool_start") {
+          const toolName = (evt.toolName as string) || (evt.name as string);
+          const args = evt.args as Record<string, unknown> | undefined;
+          if (toolName) {
+            const cmd = (args?.command as string) ?? (args?.cmd as string) ?? (args?.script as string) ?? (args ? JSON.stringify(args) : "");
+            agentCommands.push(`[${toolName}] ${cmd}`);
+          }
+        }
+        opts.onProgress?.({ type: "agent_stream", caseId: c.public.id, eventType, event: evt });
+      },
+    });
+  } catch (err: any) {
+    return {
+      ...base,
+      outcome: "ERROR",
+      reason: `Agent session failed (knowledge-QA): ${err.message ?? err}`,
+      workOrderText,
+      workOrderDifficulty: wo.difficulty,
+      namespace,
+      agentResponse,
+      agentCommands,
+      durationMs: Date.now() - start,
+    };
+  }
+
+  let scoreCommands = 0, scoreConclusion = 0, scoreReasoning = "";
+  try {
+    const scores = await scoreCase(opts.client, {
+      faultType: c.public.faultType,
+      expectedAnswer: c.private.expectedAnswer,
+      diagnosticSteps: c.private.solutionCommands.map(s => subst(s, vars)),
+      // In KQA mode, agentCommands may be empty (agent didn't execute anything).
+      // Pass agentResponse to scorer so it can extract proposed commands from
+      // the response text — the existing scoring rubric already evaluates
+      // "commands the agent proposed" not just "commands actually executed".
+      agentResponse,
+      agentCommands,
+      modelProvider: opts.modelProvider,
+      modelId: opts.modelId,
+      onEvent(evt, eventType) {
+        opts.onProgress?.({ type: "score_stream", caseId: c.public.id, eventType, event: evt });
+      },
+    });
+    scoreCommands = scores.scoreCommands;
+    scoreConclusion = scores.scoreConclusion;
+    scoreReasoning = scores.scoreReasoning;
+  } catch (err: any) {
+    return {
+      ...base,
+      outcome: "ERROR",
+      reason: `Scoring failed (knowledge-QA): ${err.message ?? err}`,
+      workOrderText,
+      workOrderDifficulty: wo.difficulty,
+      namespace,
+      agentResponse,
+      agentCommands,
+      durationMs: Date.now() - start,
+    };
+  }
+
+  const threshold = c.private.passThreshold;
+  const outcome: CaseOutcome =
+    scoreCommands >= threshold.commands && scoreConclusion >= threshold.conclusion
+      ? "PASS"
+      : "FAIL";
+
+  return {
+    ...base,
+    outcome,
+    workOrderText,
+    workOrderDifficulty: wo.difficulty,
+    namespace,
+    scoreCommands,
+    scoreConclusion,
+    scoreReasoning,
+    agentResponse,
+    agentCommands,
+    durationMs: Date.now() - start,
+  };
 }
 
 /** Apply a YAML manifest via `kubectl apply -f -`, returning combined stdout+stderr. */

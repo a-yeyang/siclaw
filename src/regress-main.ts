@@ -23,7 +23,7 @@ import { AgentBoxClient } from "./gateway/agentbox/client.js";
 import { ChatRepository } from "./gateway/db/repositories/chat-repo.js";
 import { WorkspaceRepository } from "./gateway/db/repositories/workspace-repo.js";
 import { parseRegressionMarkdown } from "./gateway/deveval/regression/md-parser.js";
-import { runCase, type CaseResult } from "./gateway/deveval/regression/runner.js";
+import { runCasesBatch, type CaseResult } from "./gateway/deveval/regression/runner.js";
 import { renderReport } from "./gateway/deveval/regression/reporter.js";
 
 const inputPath = resolve(
@@ -35,6 +35,7 @@ const outputPath = resolve(
 );
 const runAs = process.env.REGRESS_USER ?? "admin";
 const workOrderIndex = Number(process.env.REGRESS_WORK_ORDER ?? 0);
+const concurrency = Math.max(1, Number(process.env.REGRESS_CONCURRENCY ?? 4));
 
 console.log(`[regress] Input:  ${inputPath}`);
 console.log(`[regress] Output: ${outputPath}`);
@@ -96,35 +97,31 @@ try {
 
   const runId = `r${Date.now().toString(36)}`;
   const startedAt = new Date().toISOString();
-  const results: CaseResult[] = [];
 
-  for (const c of parsed.cases) {
-    console.log(`\n[regress] ▶ ${c.public.id} — ${c.public.title}`);
-    const r = await runCase(c, {
-      client,
-      chatRepo,
-      userId: user.id,
-      workspaceId: workspace.id,
-      runId,
-      workOrderIndex,
-      modelProvider,
-      modelId,
-      credentials,
-      onProgress(ev) {
-        if (ev.type === "case_injected") {
-          console.log(`[regress]   injected: ${String(ev.output ?? "").slice(0, 120)}`);
-        } else if (ev.type === "case_running") {
-          console.log(`[regress]   agent investigating…`);
-        }
-      },
-    });
-    const scoreStr = r.scoreCommands != null
-      ? ` scores=${r.scoreCommands}/${r.scoreConclusion}`
-      : "";
-    console.log(`[regress]   ← ${r.outcome}${scoreStr} (${r.durationMs}ms)`);
-    if (r.reason) console.log(`[regress]     reason: ${r.reason}`);
-    results.push(r);
-  }
+  console.log(`[regress] Running ${parsed.cases.length} cases (concurrency=${concurrency})…\n`);
+
+  const results = await runCasesBatch(parsed.cases, {
+    client,
+    chatRepo,
+    userId: user.id,
+    workspaceId: workspace.id,
+    runId,
+    workOrderIndex,
+    modelProvider,
+    modelId,
+    credentials,
+    concurrency,
+    onCaseStart(c) {
+      console.log(`[regress] ▶ ${c.public.id} — ${c.public.title}`);
+    },
+    onCaseDone(c, r) {
+      const scoreStr = r.scoreCommands != null
+        ? ` scores=${r.scoreCommands}/${r.scoreConclusion}`
+        : "";
+      console.log(`[regress] ← ${c.public.id} ${r.outcome}${scoreStr} (${r.durationMs}ms)`);
+      if (r.reason) console.log(`[regress]   reason: ${r.reason}`);
+    },
+  });
 
   const finishedAt = new Date().toISOString();
   const report = renderReport(results, {
@@ -142,10 +139,14 @@ try {
   const fail = results.filter(r => r.outcome === "FAIL").length;
   const skip = results.filter(r => r.outcome === "SKIP").length;
   const error = results.filter(r => r.outcome === "ERROR").length;
+  const missing = results.filter(r => r.outcome === "MISSING_CONTEXT").length;
 
   console.log(`\n[regress] 📄 Report: ${outputPath}`);
-  console.log(`[regress] Summary: ${pass} pass / ${fail} fail / ${skip} skip / ${error} error / ${results.length} total`);
-  if (fail > 0 || error > 0) {
+  console.log(
+    `[regress] Summary: ${pass} pass / ${fail} fail / ${missing} missing-context / ${skip} skip / ${error} error / ${results.length} total`,
+  );
+  // MISSING_CONTEXT is a case-authoring problem — counts toward exit-code failure
+  if (fail > 0 || error > 0 || missing > 0) {
     console.error(`[regress] ❌ FAILED`);
     exitCode = 1;
   } else {

@@ -18,9 +18,10 @@ export function renderReport(results: CaseResult[], meta: ReportMeta): string {
   const fail = results.filter(r => r.outcome === "FAIL").length;
   const skip = results.filter(r => r.outcome === "SKIP").length;
   const error = results.filter(r => r.outcome === "ERROR").length;
+  const missing = results.filter(r => r.outcome === "MISSING_CONTEXT").length;
   const totalMs = results.reduce((s, r) => s + r.durationMs, 0);
 
-  const overall = fail === 0 && error === 0 ? "✅ PASS" : "❌ FAIL";
+  const overall = fail === 0 && error === 0 && missing === 0 ? "✅ PASS" : "❌ FAIL";
 
   const lines: string[] = [];
   lines.push(`# 回归测试报告 — ${meta.finishedAt}`);
@@ -39,6 +40,7 @@ export function renderReport(results: CaseResult[], meta: ReportMeta): string {
   lines.push(`| 总计 | ${results.length} |`);
   lines.push(`| 通过 | ${pass} |`);
   lines.push(`| 失败 | ${fail} |`);
+  lines.push(`| 上下文缺失 | ${missing} |`);
   lines.push(`| 跳过 | ${skip} |`);
   lines.push(`| 错误 | ${error} |`);
   lines.push("");
@@ -48,7 +50,9 @@ export function renderReport(results: CaseResult[], meta: ReportMeta): string {
   lines.push(`| Case | 类型 | 命令分 | 结论分 | 阈值 | 耗时 | 结果 |`);
   lines.push(`|---|---|---|---|---|---|---|`);
   for (const r of results) {
-    const type = r.reproducible ? "reproducible" : "stubbed";
+    const type = r.reproducible
+      ? "reproducible"
+      : r.outcome === "MISSING_CONTEXT" ? "no-context" : "knowledge-qa";
     const cs = r.scoreCommands != null ? String(r.scoreCommands) : "-";
     const cc = r.scoreConclusion != null ? String(r.scoreConclusion) : "-";
     const th = `${r.passThreshold.commands}/${r.passThreshold.conclusion}`;
@@ -153,6 +157,7 @@ function outcomeIcon(o: CaseResult["outcome"]): string {
     case "FAIL": return "❌";
     case "SKIP": return "⏭️";
     case "ERROR": return "⚠️";
+    case "MISSING_CONTEXT": return "📭";
   }
 }
 

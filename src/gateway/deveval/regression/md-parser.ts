@@ -23,6 +23,13 @@ export interface PublicCase {
   podShortName: string;
   /** Work orders — one will be picked as the agent prompt */
   workOrders: Array<{ difficulty: string; text: string }>;
+  /**
+   * Knowledge-QA cluster context — only set when reproducible=false AND
+   * the case provides "### 集群现状" instead of "### Fixtures".
+   * This text is appended to the agent prompt; agent uses it to reason
+   * without touching a real cluster.
+   */
+  clusterContext?: string;
 }
 
 export interface PrivateCase {
@@ -173,16 +180,22 @@ function parseCase(block: string): ParsedCase {
     if (!yaml) throw new Error(`Case ${caseId}: '### 注入 YAML' must contain a \`\`\`yaml code block`);
     priv.injectYaml = yaml;
   } else {
-    const fixturesSection = sections.get("Fixtures");
-    if (!fixturesSection) {
-      throw new Error(`Case ${caseId}: reproducible=false requires '### Fixtures' section`);
-    }
     if (sections.has("注入 YAML")) {
       throw new Error(`Case ${caseId}: reproducible=false must NOT have '### 注入 YAML' section`);
     }
-    priv.fixtures = parseFixtures(fixturesSection, caseId);
-    if (priv.fixtures.length === 0) {
-      throw new Error(`Case ${caseId}: at least one fixture required`);
+    // Knowledge-QA is the only supported non-reproducible mode. Missing
+    // context is NOT a parse error — runner will surface it as MISSING_CONTEXT
+    // so the case author sees it in the report instead of being silently dropped.
+    const contextSection = sections.get("集群现状");
+    if (contextSection && contextSection.trim()) {
+      pub.clusterContext = contextSection.trim();
+    }
+    // Legacy: '### Fixtures' is tolerated (old cases) but ignored. The fixture
+    // replay path is not wired up — clusterContext is the only way to evaluate
+    // a non-reproducible case.
+    const fixturesSection = sections.get("Fixtures");
+    if (fixturesSection) {
+      priv.fixtures = parseFixtures(fixturesSection, caseId);
     }
   }
 
