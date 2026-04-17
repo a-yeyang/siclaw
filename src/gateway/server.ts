@@ -189,6 +189,8 @@ export interface StartGatewayOptions {
   spawner?: import("./agentbox/spawner.js").BoxSpawner;
   extraRpcMethods?: Map<string, RpcHandler>;
   extraHttpHandlers?: Map<string, (req: http.IncomingMessage, res: http.ServerResponse) => void>;
+  enableDevEval?: boolean;
+  enableRegress?: boolean;
 }
 
 export async function startGateway(opts: StartGatewayOptions): Promise<GatewayServer> {
@@ -428,7 +430,7 @@ export async function startGateway(opts: StartGatewayOptions): Promise<GatewaySe
   await refreshMetricsConfig();
 
   // Create RPC methods using AgentBoxManager
-  const { methods: rpcMethods, buildCredentialPayload, getSkillBundle, cleanupForWs } = createRpcMethods(agentBoxManager, broadcast, db, sendToUser, activePromptUsers, agentBoxTlsOptions, resourceNotifier, metricsAggregator, cronService, knowledgeIndexer, isK8sMode);
+  const { methods: rpcMethods, buildCredentialPayload, getSkillBundle, cleanupForWs } = createRpcMethods(agentBoxManager, broadcast, db, sendToUser, activePromptUsers, agentBoxTlsOptions, resourceNotifier, metricsAggregator, cronService, knowledgeIndexer, isK8sMode, opts.enableDevEval ?? false, opts.enableRegress ?? false);
 
   // Wrap system.saveSection to refresh caches when settings change
   const origSaveSection = rpcMethods.get("system.saveSection");

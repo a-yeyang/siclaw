@@ -3,6 +3,7 @@
  *
  * Pipeline:
  *   1. (reproducible only) kubectl apply the injected YAML
+ *   1b. (reproducible only) poll until fault state is confirmed active
  *   2. Create a fresh agent session, send ONLY the work order prompt
  *      (agent must NOT see the expected answer or reference solution)
  *   3. Collect agent's streamed response + tool commands
@@ -67,6 +68,10 @@ export interface CaseResult {
   podName?: string;
   namespace?: string;
   cleanupOutput?: string;
+  /** Whether the fault-readiness poll timed out (diagnosis still proceeds) */
+  faultReadyTimedOut?: boolean;
+  /** Milliseconds spent waiting for fault state to stabilise */
+  faultReadyWaitMs?: number;
   durationMs: number;
 }
 
@@ -94,6 +99,121 @@ function generatePodName(shortName: string, runId: string, now = new Date()): st
   let name = `deveval-regress-${shortName}-${runId}-${date}-${time}`;
   if (name.length > 63) name = name.slice(0, 63).replace(/-$/, "");
   return name;
+}
+
+interface FaultReadyCheck {
+  jsonpath: string;
+  expect: string;
+}
+
+const FAULT_READY_MAP: Array<{ pattern: RegExp; check: FaultReadyCheck }> = [
+  {
+    pattern: /OOMKilled/i,
+    check: {
+      jsonpath: "{.status.containerStatuses[0].lastState.terminated.reason}",
+      expect: "OOMKilled",
+    },
+  },
+  {
+    pattern: /ImagePull/i,
+    check: {
+      jsonpath: "{.status.containerStatuses[0].state.waiting.reason}",
+      expect: "ImagePullBackOff|ErrImagePull",
+    },
+  },
+  {
+    pattern: /LivenessProbe/i,
+    check: {
+      jsonpath: "{.status.containerStatuses[0].restartCount}",
+      expect: "[1-9]",
+    },
+  },
+  {
+    pattern: /CrashLoop|ExecFormat|BadCommand|BadEnvVar/i,
+    check: {
+      jsonpath: "{.status.containerStatuses[0].state.waiting.reason}",
+      expect: "CrashLoopBackOff",
+    },
+  },
+  {
+    pattern: /Pending|NodeSelector|NodeNotReady|Cordon/i,
+    check: {
+      jsonpath: "{.status.phase}",
+      expect: "Pending",
+    },
+  },
+];
+
+const FALLBACK_READY_CHECK: FaultReadyCheck = {
+  jsonpath: "{.status.phase}",
+  expect: "Running|Failed|Succeeded",
+};
+
+interface FaultReadyResult {
+  timedOut: boolean;
+  waitMs: number;
+}
+
+async function awaitFaultReady(
+  podName: string,
+  namespace: string,
+  faultType: string,
+  explicit?: { jsonpath: string; expect: string; timeoutSeconds?: number; pollIntervalSeconds?: number },
+): Promise<FaultReadyResult> {
+  const timeoutMs = (explicit?.timeoutSeconds ?? 60) * 1000;
+  const intervalMs = (explicit?.pollIntervalSeconds ?? 2) * 1000;
+
+  let check: FaultReadyCheck;
+  if (explicit) {
+    check = { jsonpath: explicit.jsonpath, expect: explicit.expect };
+  } else {
+    const entry = FAULT_READY_MAP.find(e => e.pattern.test(faultType));
+    check = entry?.check ?? FALLBACK_READY_CHECK;
+  }
+
+  const expectRe = new RegExp(check.expect);
+  const start = Date.now();
+
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const output = await kubectlJsonpath(podName, namespace, check.jsonpath);
+      if (output && expectRe.test(output)) {
+        return { timedOut: false, waitMs: Date.now() - start };
+      }
+    } catch {
+      // Pod may not exist yet — keep polling
+    }
+    await sleep(intervalMs);
+  }
+
+  return { timedOut: true, waitMs: Date.now() - start };
+}
+
+function kubectlJsonpath(podName: string, namespace: string, jsonpath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      "kubectl",
+      ["get", "pod", podName, "-n", namespace, "-o", `jsonpath=${jsonpath}`],
+      { timeout: 10_000, stdio: ["ignore", "pipe", "pipe"] },
+    );
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", d => (stdout += d.toString()));
+    child.stderr.on("data", d => (stderr += d.toString()));
+    child.on("close", code => {
+      if (code === 0) resolve(stdout.trim());
+      else {
+        const err: any = new Error(`kubectl get exited ${code}`);
+        err.stderr = stderr;
+        reject(err);
+      }
+    });
+    child.on("error", reject);
+  });
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 export async function runCase(c: ParsedCase, opts: RunOptions): Promise<CaseResult> {
@@ -173,6 +293,19 @@ export async function runCase(c: ParsedCase, opts: RunOptions): Promise<CaseResu
     };
   }
 
+  // 1b) Wait for the injected fault to actually manifest before letting the
+  //     agent diagnose. Uses explicit waitReady from frontmatter when present,
+  //     otherwise infers a check from faultType.
+  const readyResult = await awaitFaultReady(
+    podName, namespace, c.public.faultType, c.public.waitReady,
+  );
+  opts.onProgress?.({
+    type: "fault_ready",
+    caseId: c.public.id,
+    timedOut: readyResult.timedOut,
+    waitMs: readyResult.waitMs,
+  });
+
   // 2) + 3) Run agent
   //
   // ISOLATION CONTRACT (critical): the agent sees ONLY the fields built into
@@ -240,6 +373,8 @@ export async function runCase(c: ParsedCase, opts: RunOptions): Promise<CaseResu
       namespace,
       agentResponse,
       agentCommands,
+      faultReadyTimedOut: readyResult.timedOut,
+      faultReadyWaitMs: readyResult.waitMs,
       durationMs: Date.now() - start,
     };
   }
@@ -279,6 +414,8 @@ export async function runCase(c: ParsedCase, opts: RunOptions): Promise<CaseResu
       agentResponse,
       agentCommands,
       cleanupOutput,
+      faultReadyTimedOut: readyResult.timedOut,
+      faultReadyWaitMs: readyResult.waitMs,
       durationMs: Date.now() - start,
     };
   }
@@ -307,6 +444,8 @@ export async function runCase(c: ParsedCase, opts: RunOptions): Promise<CaseResu
     agentResponse,
     agentCommands,
     cleanupOutput,
+    faultReadyTimedOut: readyResult.timedOut,
+    faultReadyWaitMs: readyResult.waitMs,
     durationMs: Date.now() - start,
   };
 }
@@ -333,7 +472,7 @@ export async function runCasesBatch(
   opts: Omit<RunOptions, "onProgress"> & {
     concurrency?: number;
     onCaseStart?: (c: ParsedCase, idx: number) => void;
-    onCaseDone?: (c: ParsedCase, r: CaseResult, idx: number) => void;
+    onCaseDone?: (c: ParsedCase, r: CaseResult, idx: number) => void | Promise<void>;
     onCaseProgress?: (c: ParsedCase, ev: Record<string, unknown>) => void;
   },
 ): Promise<CaseResult[]> {

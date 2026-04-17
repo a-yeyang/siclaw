@@ -444,6 +444,27 @@ const DDL_STATEMENTS = [
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`,
 
+  `CREATE TABLE IF NOT EXISTS regression_sessions (
+    id VARCHAR(64) PRIMARY KEY,
+    user_id VARCHAR(32) NOT NULL,
+    workspace_id VARCHAR(64) NOT NULL,
+    file_name VARCHAR(500) NOT NULL,
+    markdown_content MEDIUMTEXT NOT NULL,
+    warnings_json JSON,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  )`,
+
+  `CREATE TABLE IF NOT EXISTS regression_runs (
+    id VARCHAR(64) PRIMARY KEY,
+    session_id VARCHAR(64) NOT NULL,
+    case_id VARCHAR(64) NOT NULL,
+    run_index INT NOT NULL,
+    result_json JSON,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (session_id) REFERENCES regression_sessions(id) ON DELETE CASCADE
+  )`,
+
 ];
 
 // Indexes — handled separately since MySQL lacks CREATE INDEX IF NOT EXISTS
@@ -476,6 +497,8 @@ const INDEX_STATEMENTS = [
   `ALTER TABLE skill_space_members ADD INDEX idx_skill_space_members_space (skill_space_id)`,
   `ALTER TABLE skill_space_members ADD INDEX idx_skill_space_members_user (user_id)`,
   `ALTER TABLE skills ADD INDEX idx_skills_skill_space (skill_space_id)`,
+  `ALTER TABLE regression_sessions ADD INDEX idx_regression_sessions_user (user_id, created_at)`,
+  `ALTER TABLE regression_runs ADD INDEX idx_regression_runs_session (session_id, created_at)`,
 ];
 
 export async function initSchema(db: Database): Promise<void> {

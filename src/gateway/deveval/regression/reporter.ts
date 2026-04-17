@@ -19,134 +19,81 @@ export function renderReport(results: CaseResult[], meta: ReportMeta): string {
   const skip = results.filter(r => r.outcome === "SKIP").length;
   const error = results.filter(r => r.outcome === "ERROR").length;
   const missing = results.filter(r => r.outcome === "MISSING_CONTEXT").length;
-  const totalMs = results.reduce((s, r) => s + r.durationMs, 0);
-
-  const overall = fail === 0 && error === 0 && missing === 0 ? "✅ PASS" : "❌ FAIL";
 
   const lines: string[] = [];
-  lines.push(`# 回归测试报告 — ${meta.finishedAt}`);
+
+  lines.push(`# 回归测试报告`);
   lines.push("");
-  lines.push(`**整体结果**: ${overall}`);
-  lines.push("");
-  lines.push(`| 字段 | 值 |`);
-  lines.push(`|---|---|`);
-  lines.push(`| Run ID | \`${meta.runId}\` |`);
-  lines.push(`| 开始时间 | ${meta.startedAt} |`);
-  lines.push(`| 结束时间 | ${meta.finishedAt} |`);
-  lines.push(`| 总耗时 | ${formatDuration(totalMs)} |`);
-  if (meta.agentVersion) lines.push(`| Agent 版本 | ${meta.agentVersion} |`);
-  if (meta.modelProvider) lines.push(`| 模型提供方 | ${meta.modelProvider} |`);
-  if (meta.modelId) lines.push(`| 模型 ID | ${meta.modelId} |`);
-  lines.push(`| 总计 | ${results.length} |`);
-  lines.push(`| 通过 | ${pass} |`);
-  lines.push(`| 失败 | ${fail} |`);
-  lines.push(`| 上下文缺失 | ${missing} |`);
-  lines.push(`| 跳过 | ${skip} |`);
-  lines.push(`| 错误 | ${error} |`);
+  lines.push(`PASS: ${pass} | FAIL: ${fail} | ERROR: ${error} | SKIP: ${skip} | MISSING_CONTEXT: ${missing} | 总计: ${results.length}`);
   lines.push("");
 
-  lines.push(`## 汇总`);
-  lines.push("");
-  lines.push(`| Case | 类型 | 评分规则 | 命令分 | 结论分 | 阈值 | 耗时 | 结果 |`);
-  lines.push(`|---|---|---|---|---|---|---|---|`);
-  for (const r of results) {
-    const type = r.reproducible
-      ? "reproducible"
-      : r.outcome === "MISSING_CONTEXT" ? "no-context" : "knowledge-qa";
-    const rubric = r.usedCustomRubric ? "🛠 custom" : "default";
-    const cs = r.scoreCommands != null ? String(r.scoreCommands) : "-";
-    const cc = r.scoreConclusion != null ? String(r.scoreConclusion) : "-";
-    const th = `${r.passThreshold.commands}/${r.passThreshold.conclusion}`;
-    lines.push(
-      `| \`${r.id}\` | ${type} | ${rubric} | ${cs} | ${cc} | ${th} | ${formatDuration(r.durationMs)} | ${outcomeIcon(r.outcome)} ${r.outcome} |`,
-    );
-  }
-  lines.push("");
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    lines.push(`## Case ${i + 1}: ${r.id}`);
+    lines.push("");
 
-  // Always list inject commands for every reproducible case — this is the
-  // "before-solving" kubectl that Runner (NOT the agent) used to set up the
-  // fault. Required by project spec so every case is independently reproducible.
-  const reproducible = results.filter(r => r.reproducible && r.injectCommand);
-  if (reproducible.length > 0) {
-    lines.push(`## 故障注入命令清单`);
+    lines.push(`### 结果`);
     lines.push("");
-    lines.push(`> 以下命令由 Runner 在 agent 解题**之前**执行,agent 全程无法看到这些命令或 YAML。`);
+    lines.push(`- **结果**: ${outcomeIcon(r.outcome)} ${r.outcome}`);
+    lines.push(`- **标题**: ${r.title}`);
+    lines.push(`- **类型**: ${r.reproducible ? "reproducible" : "knowledge-qa"}`);
+    if (r.scoreCommands != null) {
+      lines.push(`- **命令分**: ${r.scoreCommands}/5 (阈值 ${r.passThreshold.commands})`);
+    }
+    if (r.scoreConclusion != null) {
+      lines.push(`- **结论分**: ${r.scoreConclusion}/5 (阈值 ${r.passThreshold.conclusion})`);
+    }
+    lines.push(`- **耗时**: ${formatDuration(r.durationMs)}`);
+    if (r.usedCustomRubric) lines.push(`- **评分规则**: 自定义`);
+    if (r.reason) lines.push(`- **原因**: ${r.reason}`);
+    if (r.podName) lines.push(`- **Pod**: \`${r.podName}\``);
+    if (r.namespace) lines.push(`- **Namespace**: \`${r.namespace}\``);
     lines.push("");
-    for (const r of reproducible) {
-      lines.push(`### \`${r.id}\``);
+
+    if (r.workOrderText) {
+      lines.push(`### 工单描述`);
       lines.push("");
-      if (r.podName) lines.push(`- Pod: \`${r.podName}\``);
-      if (r.namespace) lines.push(`- Namespace: \`${r.namespace}\``);
-      lines.push("");
-      lines.push("```bash");
-      lines.push(r.injectCommand!);
-      lines.push("```");
-      if (r.injectOutput) {
-        lines.push("");
-        lines.push(`**注入输出**: \`${truncate(r.injectOutput, 300)}\``);
-      }
+      for (const l of r.workOrderText.split("\n")) lines.push(`> ${l}`);
       lines.push("");
     }
-  }
 
-  const problems = results.filter(r => r.outcome !== "PASS");
-  if (problems.length > 0) {
-    lines.push(`## 失败 / 跳过 / 错误 详情`);
-    lines.push("");
-    for (const r of problems) {
-      lines.push(`### ${outcomeIcon(r.outcome)} \`${r.id}\` — ${r.title}`);
+    if (r.scoreReasoning) {
+      lines.push(`### 评分理由`);
       lines.push("");
-      lines.push(`**结果**: ${r.outcome}`);
-      if (r.reason) lines.push(`**原因**: ${r.reason}`);
-      if (r.podName) lines.push(`**Pod 名**: \`${r.podName}\``);
-      if (r.namespace) lines.push(`**Namespace**: \`${r.namespace}\``);
-      if (r.workOrderDifficulty) lines.push(`**工单难度**: ${r.workOrderDifficulty}`);
-      if (r.workOrderText) {
-        lines.push(`**工单**:`);
-        lines.push("");
-        lines.push(`> ${r.workOrderText}`);
-      }
-      if (r.injectCommand) {
-        lines.push(`**故障注入命令**: 见上文 "故障注入命令清单 → \`${r.id}\`"`);
-      }
-      if (r.scoreReasoning) {
-        lines.push("");
-        lines.push(`**评分理由**:`);
-        lines.push("");
-        lines.push(`> ${r.scoreReasoning}`);
-      }
-      if (r.expectedAnswer) {
-        lines.push("");
-        lines.push(`**期望结论**:`);
-        lines.push("");
-        lines.push(`\`\`\``);
-        lines.push(r.expectedAnswer);
-        lines.push(`\`\`\``);
-      }
-      if (r.agentResponse) {
-        lines.push("");
-        lines.push(`**Agent 实际结论**:`);
-        lines.push("");
-        lines.push(`\`\`\``);
-        lines.push(truncate(r.agentResponse, 4000));
-        lines.push(`\`\`\``);
-      }
-      if (r.agentCommands && r.agentCommands.length > 0) {
-        lines.push("");
-        lines.push(`**Agent 执行的命令**:`);
-        lines.push("");
-        lines.push(`\`\`\``);
-        for (const c of r.agentCommands) lines.push(c);
-        lines.push(`\`\`\``);
-      }
-      if (r.injectOutput) {
-        lines.push("");
-        lines.push(`**注入输出**: \`${truncate(r.injectOutput, 200)}\``);
-      }
-      lines.push("");
-      lines.push(`---`);
+      for (const l of r.scoreReasoning.split("\n")) lines.push(`> ${l}`);
       lines.push("");
     }
+
+    if (r.agentResponse) {
+      lines.push(`### Agent 分析结论`);
+      lines.push("");
+      pushPre(lines, truncate(r.agentResponse, 4000));
+      lines.push("");
+    }
+
+    if (r.agentCommands && r.agentCommands.length > 0) {
+      lines.push(`### Agent 执行命令`);
+      lines.push("");
+      pushPre(lines, r.agentCommands.join("\n"));
+      lines.push("");
+    }
+
+    if (r.expectedAnswer) {
+      lines.push(`### 期望结论`);
+      lines.push("");
+      pushPre(lines, r.expectedAnswer);
+      lines.push("");
+    }
+
+    if (r.reproducible && r.injectCommand) {
+      lines.push(`### 故障注入命令`);
+      lines.push("");
+      pushPre(lines, r.injectCommand);
+      lines.push("");
+    }
+
+    lines.push("---");
+    lines.push("");
   }
 
   return lines.join("\n") + "\n";
@@ -173,4 +120,18 @@ function formatDuration(ms: number): string {
 function truncate(s: string, max: number): string {
   if (s.length <= max) return s;
   return s.slice(0, max) + `\n...[truncated ${s.length - max} chars]`;
+}
+
+/**
+ * Wrap content in HTML <pre> tags. Unlike markdown fenced code blocks,
+ * <pre> cannot be broken by any content inside — no backtick matching issues.
+ */
+function pushPre(lines: string[], content: string): void {
+  const escaped = content
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  lines.push("<pre>");
+  lines.push(escaped);
+  lines.push("</pre>");
 }

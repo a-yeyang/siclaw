@@ -20,8 +20,9 @@ import { buildRedactionConfig } from "../output-redactor.js";
 import { generateFaultCases } from "./fault-generator.js";
 import { scoreCase } from "./evaluator.js";
 import { parseRegressionMarkdown } from "./regression/md-parser.js";
-import { runCase, type CaseResult } from "./regression/runner.js";
+import { runCase, runCasesBatch, type CaseResult } from "./regression/runner.js";
 import { renderReport } from "./regression/reporter.js";
+import { RegressionStore } from "./regression/store.js";
 
 function requireAuth(context: RpcContext): string {
   const userId = context.auth?.userId;
@@ -650,5 +651,386 @@ export function registerDevEvalMethods(
 
     await devEvalRepo.updateCaseSelectedWorkOrder(caseId, selectedIndex);
     return { ok: true };
+  });
+
+}
+
+export function registerRegressMethods(
+  methods: Map<string, RpcHandler>,
+  db: Database | null,
+  agentBoxManager: AgentBoxManager,
+  agentBoxTlsOptions?: AgentBoxTlsOptions,
+  buildCredentialPayload?: (userId: string, workspaceId: string, isDefault: boolean) => Promise<{ manifest: Array<{ name: string; type: string; description?: string | null; files: string[]; metadata?: Record<string, unknown> }>; files: Array<{ name: string; content: string; mode?: number }> }>,
+  sendToUser?: (userId: string, event: string, payload: Record<string, unknown>) => void,
+): void {
+  const chatRepo = db ? new ChatRepository(db) : null;
+  const workspaceRepo = db ? new WorkspaceRepository(db) : null;
+  const modelConfigRepo = db ? new ModelConfigRepository(db) : null;
+  const regressionStore = new RegressionStore(db!);
+  if (db) {
+    regressionStore.loadFromDb().catch(err =>
+      console.error("[deveval] Failed to load regression sessions from DB:", err),
+    );
+  }
+
+  // ── regress.parse ──────────────────────────────────
+  methods.set("regress.parse", async (params, context: RpcContext) => {
+    const userId = requireAuth(context);
+    if (!workspaceRepo) throw new Error("Database not available");
+
+    const markdown = params.markdown as string;
+    const fileName = (params.fileName as string) || "upload.md";
+    const workspaceId = params.workspaceId as string | undefined;
+
+    if (!markdown) throw new Error("Missing required param: markdown");
+
+    const workspace = workspaceId
+      ? await workspaceRepo.getById(workspaceId)
+      : await workspaceRepo.getOrCreateDefault(userId);
+    if (!workspace || workspace.userId !== userId) throw new Error("Workspace not found");
+
+    const parsed = parseRegressionMarkdown(markdown);
+    const session = await regressionStore.createSession(
+      userId, workspace.id, fileName, markdown, parsed.cases, parsed.warnings,
+    );
+
+    return {
+      sessionId: session.id,
+      fileName,
+      cases: parsed.cases.map(c => ({
+        id: c.public.id,
+        title: c.public.title,
+        faultType: c.public.faultType,
+        reproducible: c.public.reproducible,
+        namespace: c.public.namespace,
+        tags: c.public.tags,
+        workOrders: c.public.workOrders,
+      })),
+      warnings: parsed.warnings,
+    };
+  });
+
+  // ── regress.listSessions ───────────────────────────
+  methods.set("regress.listSessions", async (_params, context: RpcContext) => {
+    const userId = requireAuth(context);
+    const sessions = regressionStore.listSessions(userId);
+    return {
+      sessions: sessions.map(s => ({
+        id: s.id,
+        fileName: s.fileName,
+        caseCount: s.cases.length,
+        warningCount: s.warnings.length,
+        createdAt: s.createdAt,
+      })),
+    };
+  });
+
+  // ── regress.getSession ─────────────────────────────
+  methods.set("regress.getSession", async (params, context: RpcContext) => {
+    const userId = requireAuth(context);
+    const sessionId = params.sessionId as string;
+    if (!sessionId) throw new Error("Missing sessionId");
+
+    const session = regressionStore.getSession(sessionId);
+    if (!session || session.userId !== userId) throw new Error("Session not found");
+
+    return {
+      sessionId: session.id,
+      fileName: session.fileName,
+      cases: session.cases.map(c => ({
+        id: c.public.id,
+        title: c.public.title,
+        faultType: c.public.faultType,
+        reproducible: c.public.reproducible,
+        namespace: c.public.namespace,
+        tags: c.public.tags,
+        workOrders: c.public.workOrders,
+      })),
+      warnings: session.warnings,
+    };
+  });
+
+  // ── regress.deleteSession ──────────────────────────
+  methods.set("regress.deleteSession", async (params, context: RpcContext) => {
+    const userId = requireAuth(context);
+    const sessionId = params.sessionId as string;
+    if (!sessionId) throw new Error("Missing sessionId");
+
+    const session = regressionStore.getSession(sessionId);
+    if (!session || session.userId !== userId) throw new Error("Session not found");
+
+    regressionStore.deleteSession(sessionId).catch(() => {});
+    return { ok: true };
+  });
+
+  // ── regress.runCase ────────────────────────────────
+  methods.set("regress.runCase", async (params, context: RpcContext) => {
+    const userId = requireAuth(context);
+    if (!chatRepo || !workspaceRepo) throw new Error("Database not available");
+
+    const sessionId = params.sessionId as string;
+    const caseId = params.caseId as string;
+    const workOrderIndex = Number(params.workOrderIndex ?? 0);
+    if (!sessionId || !caseId) throw new Error("Missing sessionId or caseId");
+
+    const session = regressionStore.getSession(sessionId);
+    if (!session || session.userId !== userId) throw new Error("Session not found");
+
+    const parsedCase = session.cases.find(c => c.public.id === caseId);
+    if (!parsedCase) throw new Error(`Case ${caseId} not found in session`);
+
+    const workspace = await workspaceRepo.getById(session.workspaceId);
+    if (!workspace) throw new Error("Workspace not found");
+
+    const modelProvider = (params.modelProvider as string | undefined)
+      ?? workspace.configJson?.defaultModel?.provider;
+    const modelId = (params.modelId as string | undefined)
+      ?? workspace.configJson?.defaultModel?.modelId;
+
+    let modelConfig: Record<string, unknown> | undefined;
+    if (modelProvider && modelConfigRepo) {
+      try {
+        const pc = await modelConfigRepo.getProviderWithModels(modelProvider);
+        if (pc) modelConfig = pc as unknown as Record<string, unknown>;
+      } catch {}
+    }
+
+    let credentials: any;
+    if (buildCredentialPayload) {
+      credentials = await buildCredentialPayload(userId, workspace.id, workspace.isDefault).catch(() => undefined);
+    }
+
+    const runId = `r${Date.now().toString(36)}`;
+    const notify = (payload: Record<string, unknown>) => {
+      if (sendToUser) sendToUser(userId, "deveval_event", payload);
+      else context.sendEvent("deveval_event", payload);
+    };
+
+    (async () => {
+      notify({ type: "regress_case_start", sessionId, caseId, runId });
+      try {
+        const handle = await agentBoxManager.getOrCreate(userId, workspace.id, {
+          workspaceId: workspace.id,
+          podEnv: (workspace.envType === "test" ? "test" : "prod") as "prod" | "dev" | "test",
+        });
+        const client = new AgentBoxClient(handle.endpoint, 300_000, agentBoxTlsOptions);
+
+        const result = await runCase(parsedCase, {
+          client,
+          chatRepo,
+          userId,
+          workspaceId: session.workspaceId,
+          runId,
+          workOrderIndex,
+          modelProvider,
+          modelId,
+          modelConfig: modelConfig as any,
+          credentials,
+          onProgress: (ev) => notify({ ...ev, sessionId, runId }),
+        });
+        const record = await regressionStore.addRun(sessionId, caseId, result);
+        notify({
+          type: "regress_case_done",
+          sessionId, caseId, runId,
+          runRecordId: record.id,
+          outcome: result.outcome,
+          scoreCommands: result.scoreCommands,
+          scoreConclusion: result.scoreConclusion,
+          durationMs: result.durationMs,
+        });
+      } catch (err: any) {
+        notify({
+          type: "regress_case_error",
+          sessionId, caseId, runId,
+          message: err.message ?? String(err),
+        });
+      }
+    })();
+
+    return { ok: true, runId, status: "running" };
+  });
+
+  // ── regress.runBatch ───────────────────────────────
+  methods.set("regress.runBatch", async (params, context: RpcContext) => {
+    const userId = requireAuth(context);
+    if (!chatRepo || !workspaceRepo) throw new Error("Database not available");
+
+    const sessionId = params.sessionId as string;
+    const caseIds = params.caseIds as string[];
+    const workOrderIndex = Number(params.workOrderIndex ?? 0);
+    if (!sessionId || !caseIds?.length) throw new Error("Missing sessionId or caseIds");
+
+    const session = regressionStore.getSession(sessionId);
+    if (!session || session.userId !== userId) throw new Error("Session not found");
+
+    const selectedCases = session.cases.filter(c => caseIds.includes(c.public.id));
+    if (selectedCases.length === 0) throw new Error("No matching cases found");
+
+    const workspace = await workspaceRepo.getById(session.workspaceId);
+    if (!workspace) throw new Error("Workspace not found");
+
+    const modelProvider = (params.modelProvider as string | undefined)
+      ?? workspace.configJson?.defaultModel?.provider;
+    const modelId = (params.modelId as string | undefined)
+      ?? workspace.configJson?.defaultModel?.modelId;
+
+    let modelConfig: Record<string, unknown> | undefined;
+    if (modelProvider && modelConfigRepo) {
+      try {
+        const pc = await modelConfigRepo.getProviderWithModels(modelProvider);
+        if (pc) modelConfig = pc as unknown as Record<string, unknown>;
+      } catch {}
+    }
+
+    let credentials: any;
+    if (buildCredentialPayload) {
+      credentials = await buildCredentialPayload(userId, workspace.id, workspace.isDefault).catch(() => undefined);
+    }
+
+    const runId = `r${Date.now().toString(36)}`;
+    const notify = (payload: Record<string, unknown>) => {
+      if (sendToUser) sendToUser(userId, "deveval_event", payload);
+      else context.sendEvent("deveval_event", payload);
+    };
+
+    (async () => {
+      notify({ type: "regress_batch_start", sessionId, runId, total: selectedCases.length });
+
+      try {
+        const handle = await agentBoxManager.getOrCreate(userId, workspace.id, {
+          workspaceId: workspace.id,
+          podEnv: (workspace.envType === "test" ? "test" : "prod") as "prod" | "dev" | "test",
+        });
+        const client = new AgentBoxClient(handle.endpoint, 300_000, agentBoxTlsOptions);
+
+        const results = await runCasesBatch(selectedCases, {
+          client,
+          chatRepo,
+          userId,
+          workspaceId: session.workspaceId,
+          runId,
+          workOrderIndex,
+          modelProvider,
+          modelId,
+          modelConfig: modelConfig as any,
+          credentials,
+          concurrency: Math.min(Number(params.concurrency ?? 4), 8),
+          onCaseStart(c) {
+            notify({ type: "regress_case_start", sessionId, runId, caseId: c.public.id });
+          },
+          async onCaseDone(c, r) {
+            const record = await regressionStore.addRun(sessionId, c.public.id, r);
+            notify({
+              type: "regress_case_done",
+              sessionId, runId,
+              caseId: c.public.id,
+              runRecordId: record.id,
+              outcome: r.outcome,
+              scoreCommands: r.scoreCommands,
+              scoreConclusion: r.scoreConclusion,
+              durationMs: r.durationMs,
+            });
+          },
+          onCaseProgress(c, ev) {
+            notify({ ...ev, sessionId, runId });
+          },
+        });
+
+        const summary = {
+          pass: results.filter(r => r.outcome === "PASS").length,
+          fail: results.filter(r => r.outcome === "FAIL").length,
+          skip: results.filter(r => r.outcome === "SKIP").length,
+          error: results.filter(r => r.outcome === "ERROR").length,
+          missing: results.filter(r => r.outcome === "MISSING_CONTEXT").length,
+          total: results.length,
+        };
+        notify({ type: "regress_batch_done", sessionId, runId, summary });
+      } catch (err: any) {
+        notify({
+          type: "regress_batch_error",
+          sessionId, runId,
+          message: err.message ?? String(err),
+        });
+      }
+    })();
+
+    return { ok: true, runId, status: "running" };
+  });
+
+  // ── regress.getHistory ─────────────────────────────
+  methods.set("regress.getHistory", async (params, context: RpcContext) => {
+    const userId = requireAuth(context);
+    const sessionId = params.sessionId as string;
+    if (!sessionId) throw new Error("Missing sessionId");
+
+    const session = regressionStore.getSession(sessionId);
+    if (!session || session.userId !== userId) throw new Error("Session not found");
+
+    const allRuns = regressionStore.getAllRuns(sessionId);
+    return {
+      sessionId,
+      runs: allRuns.map(r => ({
+        id: r.id,
+        caseId: r.caseId,
+        runIndex: r.runIndex,
+        outcome: r.result.outcome,
+        reason: r.result.reason,
+        scoreCommands: r.result.scoreCommands,
+        scoreConclusion: r.result.scoreConclusion,
+        scoreReasoning: r.result.scoreReasoning,
+        agentResponse: r.result.agentResponse,
+        agentCommands: r.result.agentCommands,
+        workOrderText: r.result.workOrderText,
+        workOrderDifficulty: r.result.workOrderDifficulty,
+        passThreshold: r.result.passThreshold,
+        durationMs: r.result.durationMs,
+        createdAt: r.createdAt,
+      })),
+    };
+  });
+
+  // ── regress.generateReport ─────────────────────────
+  methods.set("regress.generateReport", async (params, context: RpcContext) => {
+    const userId = requireAuth(context);
+    const sessionId = params.sessionId as string;
+    const runRecordIds = params.runRecordIds as string[] | undefined;
+    if (!sessionId) throw new Error("Missing sessionId");
+
+    const session = regressionStore.getSession(sessionId);
+    if (!session || session.userId !== userId) throw new Error("Session not found");
+
+    const allRuns = regressionStore.getAllRuns(sessionId);
+    let selectedResults: CaseResult[];
+
+    if (runRecordIds && runRecordIds.length > 0) {
+      selectedResults = allRuns
+        .filter(r => runRecordIds.includes(r.id))
+        .map(r => r.result);
+    } else {
+      const latestByCaseId = new Map<string, typeof allRuns[0]>();
+      for (const r of allRuns) {
+        const existing = latestByCaseId.get(r.caseId);
+        if (!existing || r.runIndex > existing.runIndex) {
+          latestByCaseId.set(r.caseId, r);
+        }
+      }
+      selectedResults = [...latestByCaseId.values()].map(r => r.result);
+    }
+
+    if (selectedResults.length === 0) {
+      throw new Error("No run records found. Run some cases first.");
+    }
+
+    const report = renderReport(selectedResults, {
+      runId: sessionId,
+      startedAt: session.createdAt,
+      finishedAt: new Date().toISOString(),
+    });
+
+    const safeName = session.fileName.replace(/\.md$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
+    return {
+      report,
+      fileName: `regression-report-${safeName}-${Date.now()}.md`,
+    };
   });
 }

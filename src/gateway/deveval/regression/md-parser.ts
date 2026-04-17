@@ -30,6 +30,18 @@ export interface PublicCase {
    * without touching a real cluster.
    */
   clusterContext?: string;
+  /**
+   * Explicit fault-readiness check for reproducible cases. Runner polls
+   * `kubectl get pod <podName> -o jsonpath=<jsonpath>` and waits until
+   * output matches `expect` (regex). Falls back to faultType-based
+   * inference when absent.
+   */
+  waitReady?: {
+    jsonpath: string;
+    expect: string;
+    timeoutSeconds?: number;
+    pollIntervalSeconds?: number;
+  };
 }
 
 export interface PrivateCase {
@@ -167,6 +179,18 @@ function parseCase(block: string): ParsedCase {
     podShortName,
     workOrders,
   };
+
+  if (reproducible && meta.waitReady && typeof meta.waitReady === "object") {
+    const wr = meta.waitReady as Record<string, unknown>;
+    if (typeof wr.jsonpath === "string" && typeof wr.expect === "string") {
+      pub.waitReady = {
+        jsonpath: wr.jsonpath,
+        expect: wr.expect,
+        timeoutSeconds: typeof wr.timeoutSeconds === "number" ? wr.timeoutSeconds : undefined,
+        pollIntervalSeconds: typeof wr.pollIntervalSeconds === "number" ? wr.pollIntervalSeconds : undefined,
+      };
+    }
+  }
 
   const priv: PrivateCase = {
     id: pub.id,

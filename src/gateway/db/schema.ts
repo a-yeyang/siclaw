@@ -59,6 +59,8 @@ export const {
   skillReviews,
   devEvalExperiments,
   devEvalCases,
+  regressionSessions,
+  regressionRuns,
 } = _mod;
 
 export type { ReviewFinding } from "./schema-mysql.js";

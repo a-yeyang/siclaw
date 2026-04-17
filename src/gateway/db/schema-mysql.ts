@@ -585,6 +585,27 @@ export const devEvalCases = mysqlTable("dev_eval_cases", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// ─── Regression Sessions & Runs ─────────────────────
+
+export const regressionSessions = mysqlTable("regression_sessions", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  userId: varchar("user_id", { length: 64 }).notNull().references(() => users.id),
+  workspaceId: varchar("workspace_id", { length: 64 }).notNull(),
+  fileName: varchar("file_name", { length: 500 }).notNull(),
+  markdownContent: text("markdown_content").notNull(),
+  warningsJson: json("warnings_json").$type<Array<{ caseId: string; message: string }>>(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const regressionRuns = mysqlTable("regression_runs", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  sessionId: varchar("session_id", { length: 64 }).notNull().references(() => regressionSessions.id, { onDelete: "cascade" }),
+  caseId: varchar("case_id", { length: 64 }).notNull(),
+  runIndex: int("run_index").notNull(),
+  resultJson: json("result_json").$type<Record<string, unknown>>(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 export const skillReviews = mysqlTable("skill_reviews", {
   id: varchar("id", { length: 64 }).primaryKey(),
   skillId: varchar("skill_id", { length: 64 })

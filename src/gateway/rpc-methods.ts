@@ -60,7 +60,7 @@ import type { MemoryIndexer } from "../memory/index.js";
 import { resolveUnderDir } from "../shared/path-utils.js";
 import { loadConfig } from "../core/config.js";
 import { type DpStatus, type DpChecklist, createChecklist, syncChecklistFromStatus, type DpState } from "../tools/workflow/dp-tools.js";
-import { registerDevEvalMethods } from "./deveval/deveval-handlers.js";
+import { registerDevEvalMethods, registerRegressMethods } from "./deveval/deveval-handlers.js";
 
 export type SendToUserFn = (userId: string, event: string, payload: Record<string, unknown>) => void;
 
@@ -171,6 +171,8 @@ export function createRpcMethods(
   cronService?: CronService | null,
   knowledgeIndexer?: MemoryIndexer | null,
   isK8sMode = false,
+  enableDevEval = false,
+  enableRegress = false,
 ): {
   methods: Map<string, RpcHandler>;
   buildCredentialPayload: (userId: string, workspaceId: string, isDefault: boolean) => Promise<{ manifest: Array<{ name: string; type: string; description?: string | null; files: string[]; metadata?: Record<string, unknown> }>; files: Array<{ name: string; content: string; mode?: number }> }>;
@@ -1004,6 +1006,8 @@ export function createRpcMethods(
     return {
       isK8sMode,
       skillSpaceEnabled,
+      devEvalEnabled: enableDevEval,
+      regressEnabled: enableRegress,
     };
   });
 
@@ -7332,14 +7336,27 @@ export function createRpcMethods(
   });
 
   // ── DevEval (developer self-evaluation mode) ──────
-  registerDevEvalMethods(
-    methods,
-    db,
-    agentBoxManager,
-    agentBoxTlsOptions,
-    buildCredentialPayload,
-    sendToUser,
-  );
+  if (enableDevEval) {
+    registerDevEvalMethods(
+      methods,
+      db,
+      agentBoxManager,
+      agentBoxTlsOptions,
+      buildCredentialPayload,
+      sendToUser,
+    );
+  }
+
+  if (enableRegress) {
+    registerRegressMethods(
+      methods,
+      db,
+      agentBoxManager,
+      agentBoxTlsOptions,
+      buildCredentialPayload,
+      sendToUser,
+    );
+  }
 
   return { methods, buildCredentialPayload, getSkillBundle, cleanupForWs };
 }

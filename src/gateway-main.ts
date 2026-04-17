@@ -14,6 +14,8 @@ import { WorkspaceRepository } from "./gateway/db/repositories/workspace-repo.js
 const args = process.argv.slice(2);
 const useK8s = args.includes("--k8s");
 const useProcess = args.includes("--process");
+const enableDevEval = args.includes("--deveval");
+const enableRegress = args.includes("--regress");
 
 // Load config
 const config = loadGatewayConfig();
@@ -36,6 +38,8 @@ const spawner = useK8s
     : new LocalSpawner(4000);
 
 console.log(`[gateway] Using spawner: ${spawner.name}`);
+if (enableDevEval) console.log("[gateway] DevEval mode enabled (--deveval)");
+if (enableRegress) console.log("[gateway] Regression mode enabled (--regress)");
 
 // Create AgentBox Manager
 const agentBoxManager = new AgentBoxManager(spawner, {
@@ -62,6 +66,8 @@ const gateway = await startGateway({
   agentBoxManager,
   spawner,
   extraHttpHandlers,
+  enableDevEval,
+  enableRegress,
 });
 
 // --- Channel subsystem ---

@@ -70,6 +70,8 @@ export type Skill = {
 export type SkillSystemCapabilities = {
     isK8sMode: boolean;
     skillSpaceEnabled: boolean;
+    devEvalEnabled: boolean;
+    regressEnabled: boolean;
 };
 
 export type SkillDiffMetadataChange = {

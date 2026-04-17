@@ -307,6 +307,25 @@ const DDL_STATEMENTS = [
     created_at INTEGER NOT NULL DEFAULT (unixepoch())
   )`,
 
+  `CREATE TABLE IF NOT EXISTS regression_sessions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    workspace_id TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    markdown_content TEXT NOT NULL,
+    warnings_json TEXT,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  )`,
+
+  `CREATE TABLE IF NOT EXISTS regression_runs (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES regression_sessions(id) ON DELETE CASCADE,
+    case_id TEXT NOT NULL,
+    run_index INTEGER NOT NULL,
+    result_json TEXT,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  )`,
+
   `CREATE TABLE IF NOT EXISTS model_providers (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
@@ -480,6 +499,8 @@ const INDEX_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_skills_skill_space ON skills(skill_space_id)`,
   `CREATE INDEX IF NOT EXISTS idx_dev_eval_experiments_user ON dev_eval_experiments(user_id, created_at)`,
   `CREATE INDEX IF NOT EXISTS idx_dev_eval_cases_experiment ON dev_eval_cases(experiment_id, case_index)`,
+  `CREATE INDEX IF NOT EXISTS idx_regression_sessions_user ON regression_sessions(user_id, created_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_regression_runs_session ON regression_runs(session_id, created_at)`,
 ];
 
 export async function runSqliteMigrations(db: Database): Promise<void> {

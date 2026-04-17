@@ -571,6 +571,27 @@ export const devEvalCases = sqliteTable("dev_eval_cases", {
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
 });
 
+// ─── Regression Sessions & Runs ─────────────────────
+
+export const regressionSessions = sqliteTable("regression_sessions", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id),
+  workspaceId: text("workspace_id").notNull(),
+  fileName: text("file_name").notNull(),
+  markdownContent: text("markdown_content").notNull(),
+  warningsJson: text("warnings_json", { mode: "json" }).$type<Array<{ caseId: string; message: string }>>(),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+});
+
+export const regressionRuns = sqliteTable("regression_runs", {
+  id: text("id").primaryKey(),
+  sessionId: text("session_id").notNull().references(() => regressionSessions.id, { onDelete: "cascade" }),
+  caseId: text("case_id").notNull(),
+  runIndex: integer("run_index").notNull(),
+  resultJson: text("result_json", { mode: "json" }).$type<Record<string, unknown>>(),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+});
+
 export const skillReviews = sqliteTable("skill_reviews", {
   id: text("id").primaryKey(),
   skillId: text("skill_id")

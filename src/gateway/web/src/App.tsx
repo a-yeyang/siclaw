@@ -23,6 +23,9 @@ import { KnowledgePage } from './pages/Knowledge';
 import { CredentialsPage } from './pages/Environments';
 import { MetricsPage } from './pages/Metrics';
 import { DevEvalPage } from './pages/DevEval';
+import { RegressionPage } from './pages/Regression';
+import { DevEvalGuard } from './components/DevEvalGuard';
+import { RegressGuard } from './components/RegressGuard';
 
 function ComingSoonPage({ title }: { title: string }) {
     return (
@@ -79,7 +82,8 @@ const router = createBrowserRouter([
                     // { path: 'brains', element: <BrainsPage /> },  // hidden until claude-sdk brain is polished
                     { path: 'models', element: <ModelsPage /> },
                     { path: 'monitoring', element: <MetricsPage /> },
-                    { path: 'dev-eval', element: <DevEvalPage /> },
+                    { path: 'dev-eval', element: <DevEvalGuard><DevEvalPage /></DevEvalGuard> },
+                    { path: 'regression', element: <RegressGuard><RegressionPage /></RegressGuard> },
                 ],
             },
         ],

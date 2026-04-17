@@ -20,6 +20,7 @@ import {
     BarChart3,
     BookOpen,
     FlaskConical,
+    TestTubes,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -28,12 +29,15 @@ import { getUser } from '../../pages/Settings/userData';
 import { NotificationBell } from '../NotificationBell';
 import { getCurrentUser } from '../../auth';
 import { useWorkspace } from '../../contexts/WorkspaceContext';
+import { useCapabilities } from '../../hooks/useCapabilities';
 
 interface NavItem {
     icon: LucideIcon;
     label: string;
     to: string;
     adminOnly?: boolean;
+    devEvalOnly?: boolean;
+    regressOnly?: boolean;
 }
 
 interface NavGroup {
@@ -48,7 +52,8 @@ const topItems: NavItem[] = [
     { icon: Boxes, label: 'Workspace', to: '/workspace' },
     { icon: Timer, label: 'Cron Jobs', to: '/cron' },
     { icon: Zap, label: 'Triggers', to: '/triggers' },
-    { icon: FlaskConical, label: 'DevEval', to: '/dev-eval' },
+    { icon: FlaskConical, label: 'DevEval', to: '/dev-eval', devEvalOnly: true },
+    { icon: TestTubes, label: 'Regression', to: '/regression', regressOnly: true },
 ];
 
 const groups: NavGroup[] = [
@@ -120,6 +125,7 @@ export function Sidebar() {
     const currentUser = getCurrentUser();
     const isSidebarAdmin = currentUser?.username === 'admin';
     const { workspaces, currentWorkspace, setCurrentWorkspace } = useWorkspace();
+    const { caps } = useCapabilities();
     const [wsDropdownOpen, setWsDropdownOpen] = useState(false);
     const wsDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -212,7 +218,13 @@ export function Sidebar() {
 
             {/* Navigation */}
             <div className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
-                {topItems.map(item => (
+                {topItems
+                    .filter(item => {
+                        if (item.devEvalOnly && !caps.devEvalEnabled) return false;
+                        if (item.regressOnly && !caps.regressEnabled) return false;
+                        return true;
+                    })
+                    .map(item => (
                     <NavLink
                         key={item.to}
                         to={item.to}
