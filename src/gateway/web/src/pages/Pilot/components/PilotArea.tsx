@@ -777,7 +777,7 @@ function MessageItem({ message, scheduleStatus, onOpenSchedulePanel, onOpenSkill
                         <span className="text-xs font-mono text-gray-400">⏳{formatDuration(message.waitMs)}</span>
                     )}
                     {!message.isStreaming && !isUser && message.llmDurationMs != null && (
-                        <span className="text-xs font-mono text-gray-400">{formatDuration(message.llmDurationMs)}</span>
+                        <span className="text-xs font-mono text-gray-400">💭{formatDuration(message.llmDurationMs)}</span>
                     )}
                 </div>
 
@@ -869,13 +869,13 @@ function ToolItem({ message }: { message: PilotMessage }) {
             {message.waitMs != null && message.waitMs > 100 && (
                 <div className="flex items-center gap-1.5 px-3 py-1 text-xs text-gray-400 font-mono">
                     <span>⏳</span>
-                    <span>等待模型 {formatDuration(message.waitMs)}</span>
+                    <span>Waiting {formatDuration(message.waitMs)}</span>
                 </div>
             )}
             {message.llmDurationMs != null && (
                 <div className="flex items-center gap-1.5 px-3 py-1 text-xs text-gray-400 font-mono">
                     <span>💭</span>
-                    <span>思考 {formatDuration(message.llmDurationMs)}</span>
+                    <span>Thinking {formatDuration(message.llmDurationMs)}</span>
                 </div>
             )}
             <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
