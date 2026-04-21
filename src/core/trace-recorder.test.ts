@@ -373,6 +373,92 @@ describe("TraceRecorder", () => {
     expect(t.userMessage).toBe("当前的集群有多少pod");
   });
 
+  it("explicit mode merges multiple internal agent_start/end cycles into ONE trace (retry/compaction case)", () => {
+    // This is the real-world regression: ONE user prompt ("检查集群硬件问题...")
+    // caused pi-agent to fire TWO agent_start/agent_end cycles internally (due
+    // to empty-response retry or auto-compaction), which previously produced two
+    // trace files. With explicit boundaries via beginPrompt/endPrompt, both
+    // cycles must be merged into a single trace file.
+    const rec = makeRecorder();
+    const listeners: Array<(e: unknown) => void> = [];
+    const fakeBrain = {
+      brainType: "pi-agent" as const,
+      subscribe(fn: (e: unknown) => void) { listeners.push(fn); return () => {}; },
+    } as any;
+    rec.attach(fakeBrain);
+    const emit = (e: unknown) => listeners.forEach((fn) => fn(e));
+
+    rec.beginPrompt("检查当前的这个集群里面有哪些硬件问题？");
+
+    // Internal cycle #1 — initial run with tool calls
+    emit({ type: "agent_start" });
+    emit({ type: "turn_start" });
+    emit({ type: "tool_execution_start", toolName: "bash", toolCallId: "t1",
+           args: { command: "kubectl get nodes -o wide" } });
+    emit({ type: "tool_execution_end", toolName: "bash", toolCallId: "t1",
+           result: { content: [{ type: "text", text: "Ready nodes..." }] } });
+    emit({ type: "turn_end" });
+    emit({ type: "agent_end" });
+
+    // Pi-agent re-emits the user message verbatim (with language prefix) when
+    // it retries — this must NOT overwrite our authoritative userMessage.
+    emit({
+      type: "message_end",
+      message: { role: "user", content: "[System: respond in Chinese]\n检查当前的这个集群里面有哪些硬件问题？" },
+    });
+
+    // Internal cycle #2 — retry / continuation with more tool calls
+    emit({ type: "agent_start" });
+    emit({ type: "turn_start" });
+    emit({ type: "tool_execution_start", toolName: "bash", toolCallId: "t2",
+           args: { command: "kubectl top nodes" } });
+    emit({ type: "tool_execution_end", toolName: "bash", toolCallId: "t2",
+           result: { content: [{ type: "text", text: "cpu/mem..." }] } });
+    emit({
+      type: "message_end",
+      message: { role: "assistant", stopReason: "end_turn",
+                 content: [{ type: "text", text: "报告完成" }] },
+    });
+    emit({ type: "turn_end" });
+    emit({ type: "agent_end" });
+
+    rec.endPrompt("completed");
+
+    const traces = readTraces();
+    expect(traces).toHaveLength(1);                                // ← 关键断言：只有 1 份文件
+    const t = traces[0] as any;
+    expect(t.userMessage).toBe("检查当前的这个集群里面有哪些硬件问题？"); // ← 不被 retry 时的 pi-agent 回放污染
+    const toolCalls = t.steps.filter((s: any) => s.kind === "tool_call");
+    expect(toolCalls).toHaveLength(2);                             // ← 两个周期的工具调用都在
+    expect((toolCalls[0].args as any).command).toBe("kubectl get nodes -o wide");
+    expect((toolCalls[1].args as any).command).toBe("kubectl top nodes");
+    expect(t.outcome).toBe("completed");
+  });
+
+  it("auto mode (no beginPrompt) still works via agent_start/end as fallback", () => {
+    // If external code never calls beginPrompt, we fall back to auto-detect.
+    // This path must keep working for non-wrapped callers.
+    const rec = makeRecorder();
+    const listeners: Array<(e: unknown) => void> = [];
+    const fakeBrain = {
+      brainType: "pi-agent" as const,
+      subscribe(fn: (e: unknown) => void) { listeners.push(fn); return () => {}; },
+    } as any;
+    rec.attach(fakeBrain);
+    const emit = (e: unknown) => listeners.forEach((fn) => fn(e));
+
+    emit({ type: "message_end", message: { role: "user", content: "hello" } });
+    emit({ type: "agent_start" });
+    emit({ type: "tool_execution_start", toolName: "bash", toolCallId: "tc1", args: { command: "ls" } });
+    emit({ type: "tool_execution_end", toolName: "bash", toolCallId: "tc1",
+           result: { content: [{ type: "text", text: "ok" }] } });
+    emit({ type: "agent_end" });
+
+    const t = readTraces()[0] as any;
+    expect(t.userMessage).toBe("hello");
+    expect(t.steps.filter((s: any) => s.kind === "tool_call")).toHaveLength(1);
+  });
+
   it("close() flushes an in-flight trace", () => {
     const rec = makeRecorder();
     const listeners: Array<(e: unknown) => void> = [];

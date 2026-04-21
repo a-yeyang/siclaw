@@ -20,7 +20,13 @@ import type { BrainSession, BrainSessionStats, BrainModelInfo } from "./brain-se
 export interface TraceRecorderOpts {
   traceDir: string;
   sessionId: string;
+  /** Internal user identifier (hex ID in web mode, OS username in CLI). Used as the
+   *  machine-readable field in the JSON body; also used as the filename fallback
+   *  when no displayable username is available. */
   userId?: string;
+  /** Displayable username (e.g. "admin") — set via constructor for CLI or later via
+   *  setUsername() for web mode. Preferred over userId in filenames. */
+  username?: string;
   mode: string;
   brainType?: string;
   getSessionStats?: () => BrainSessionStats | undefined;
@@ -101,6 +107,17 @@ export class TraceRecorder {
   private prevStats: BrainSessionStats | undefined;
   private unsubscribeDiag: (() => void) | null = null;
   private outcome: "completed" | "error" = "completed";
+  /** Live username — may be updated mid-session via setUsername() (web mode). */
+  private username: string | undefined;
+  /**
+   * Explicit-boundary mode. Once beginPrompt() is called by external code
+   * (http-server `/api/prompt`, cli-main's session.prompt wrapper, …), we stop
+   * treating internal agent_start/agent_end events as trace boundaries. This
+   * keeps ONE user prompt = ONE trace file even when pi-agent internally fires
+   * multiple agent cycles (empty-response retry, auto-compaction, continuation).
+   * Once set to true, stays true — mixing modes mid-session is not supported.
+   */
+  private explicitMode = false;
 
   constructor(private readonly opts: TraceRecorderOpts) {
     try {
@@ -108,7 +125,18 @@ export class TraceRecorder {
     } catch (err) {
       console.warn(`[trace-recorder] Failed to create trace dir ${opts.traceDir}:`, err);
     }
+    this.username = opts.username;
     this.unsubscribeDiag = onDiagnostic((evt) => this.onDiagnosticEvent(evt));
+  }
+
+  /**
+   * Set (or update) the displayable username. Used by the web/agentbox path
+   * where username isn't known at session-creation time but arrives later in
+   * the prompt body. Applies to all subsequent trace flushes for this session
+   * — filenames use it, and the JSON body records it alongside userId.
+   */
+  setUsername(username: string): void {
+    if (username && username.trim()) this.username = username;
   }
 
   /** Subscribe to a brain's events. Returns unsubscribe fn. */
@@ -136,8 +164,20 @@ export class TraceRecorder {
     }
   }
 
-  /** Start collecting a new trace. Usually auto-invoked on agent_start. */
+  /**
+   * Start collecting a new trace. When called externally (http-server,
+   * cli-main's session.prompt wrapper), switches the recorder into
+   * explicit-boundary mode: subsequent internal agent_start/agent_end events
+   * will NOT split the trace into multiple files.
+   */
   beginPrompt(userMessage: string): void {
+    this.explicitMode = true;
+    this.startTrace(userMessage);
+  }
+
+  /** Shared trace-reset logic used by both explicit beginPrompt() and the
+   *  internal auto-detect path (agent_start in auto mode). */
+  private startTrace(userMessage: string): void {
     if (this.active) this.flush();
     this.active = true;
     this.promptIdx += 1;
@@ -176,18 +216,23 @@ export class TraceRecorder {
     if (!type) return;
     const now = Date.now();
 
-    // User message: capture for use when next agent_start fires.
+    // User message: capture for use when next agent_start fires (auto mode only).
+    // In EXPLICIT mode, pi-agent may re-emit the prompt verbatim during retry —
+    // don't let that overwrite the authoritative userMessage from beginPrompt().
     if (type === "message_end") {
       const msg = ev.message as Record<string, unknown> | undefined;
-      if (msg?.role === "user") {
+      if (msg?.role === "user" && !this.explicitMode) {
         this.lastUserMessageBuffered = extractText(msg.content);
       }
     }
 
-    // agent_start opens a new trace. The bracket event itself is not added to steps[]
-    // since the top-level startedAt/endedAt already captures the run's boundaries.
+    // agent_start: in AUTO mode, opens a new trace. In EXPLICIT mode, internal
+    // cycles (empty-response retry / auto-compaction continuation) are merged
+    // into the current trace by external beginPrompt — do nothing here.
     if (type === "agent_start") {
-      this.beginPrompt(this.lastUserMessageBuffered);
+      if (!this.explicitMode) {
+        this.startTrace(this.lastUserMessageBuffered);
+      }
       return;
     }
 
@@ -195,6 +240,8 @@ export class TraceRecorder {
 
     switch (type) {
       case "agent_end":
+        // In EXPLICIT mode, external endPrompt drives the flush; ignore.
+        if (this.explicitMode) return;
         this.flush();
         return;
 
@@ -421,6 +468,7 @@ export class TraceRecorder {
     const trace = {
       schemaVersion: "1.1",
       sessionId: this.opts.sessionId,
+      username: this.username,
       userId: this.opts.userId,
       mode: this.opts.mode,
       brainType: this.opts.brainType,
@@ -435,9 +483,12 @@ export class TraceRecorder {
       steps: this.steps,
     };
 
-    const user = (this.opts.userId && this.opts.userId.trim() ? this.opts.userId : "unknown")
-      .replace(/[^a-zA-Z0-9._-]/g, "_")
-      .slice(0, 32);
+    // Filename prefers the displayable username ("admin") over the internal
+    // hex userId ("3e3a85bf..."), falls back to "unknown" if neither.
+    const raw = (this.username && this.username.trim())
+      ? this.username
+      : (this.opts.userId && this.opts.userId.trim() ? this.opts.userId : "unknown");
+    const user = raw.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 32);
     const stamp = formatBeijingFilename(this.startedAtMs); // YYYYMMDD-HHmmssSSS
     const baseName = `trace-${stamp}-${user}`;
     // If two traces fall in the exact same millisecond, append -002, -003, ...

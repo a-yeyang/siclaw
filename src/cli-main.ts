@@ -120,9 +120,11 @@ if (memoryIndexer) {
 
 // Trace recorder — writes per-prompt JSON traces to .siclaw/traces for offline
 // retrospective. Not exposed via HTTP/SSE. Disable with SICLAW_TRACE_DISABLE=1.
+const osUsername = (() => { try { return os.userInfo().username; } catch { return process.env.USER ?? "unknown"; } })();
 const traceRecorder = maybeCreateTraceRecorder({
   sessionId: sessionManager.getSessionId?.() ?? `cli-${Date.now()}`,
-  userId: (() => { try { return os.userInfo().username; } catch { return process.env.USER ?? "unknown"; } })(),
+  userId: osUsername,
+  username: osUsername,
   mode: "cli",
   brainType: brain.brainType,
   getSessionStats: () => brain.getSessionStats(),
@@ -132,6 +134,23 @@ if (traceRecorder) {
   traceRecorder.attach(brain);
   const traceDir = process.env.SICLAW_TRACE_DIR ?? path.join(process.cwd(), ".siclaw", "traces");
   console.log(`[siclaw] Trace recording → ${path.relative(process.cwd(), traceDir) || traceDir}`);
+
+  // Wrap session.prompt (what InteractiveMode calls) so each user-initiated
+  // prompt yields exactly ONE trace file, even if pi-agent internally runs
+  // multiple agent_start/end cycles (empty-response retry, auto-compaction).
+  const origSessionPrompt = session.prompt.bind(session);
+  (session as unknown as { prompt: (text: string) => Promise<void> }).prompt = async (text: string) => {
+    traceRecorder.beginPrompt(text);
+    let outcome: "completed" | "error" = "completed";
+    try {
+      await origSessionPrompt(text);
+    } catch (err) {
+      outcome = "error";
+      throw err;
+    } finally {
+      traceRecorder.endPrompt(outcome);
+    }
+  };
 }
 
 // Debug: subscribe to all session events and write to log file

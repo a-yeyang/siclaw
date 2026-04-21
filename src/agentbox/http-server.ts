@@ -241,7 +241,7 @@ export function createHttpServer(sessionManager: AgentBoxSessionManager): http.S
    * The message is sent to the Agent, and responses are returned via SSE stream.
    */
   addRoute("POST", "/api/prompt", async (req, res) => {
-    const body = (await parseJsonBody(req)) as { sessionId?: string; text?: string; mode?: SessionMode; modelProvider?: string; modelId?: string; brainType?: BrainType; systemPromptTemplate?: string; modelConfig?: Record<string, unknown>; credentials?: { manifest: Array<Record<string, unknown>>; files: Array<{ name: string; content: string; mode?: number }> } };
+    const body = (await parseJsonBody(req)) as { sessionId?: string; text?: string; mode?: SessionMode; modelProvider?: string; modelId?: string; brainType?: BrainType; systemPromptTemplate?: string; modelConfig?: Record<string, unknown>; credentials?: { manifest: Array<Record<string, unknown>>; files: Array<{ name: string; content: string; mode?: number }> }; username?: string };
 
     if (!body.text) {
       sendJson(res, 400, { error: "Missing 'text' field" });
@@ -441,12 +441,17 @@ export function createHttpServer(sessionManager: AgentBoxSessionManager): http.S
       } catch { /* best-effort, don't block prompt */ }
     }
 
-    // Hand the raw user text to the trace recorder so the upcoming agent_start
-    // can associate the correct userMessage with the trace. Without this, web
-    // mode traces end up with an empty userMessage — pi-agent doesn't reliably
-    // emit message_end{role:"user"} before agent_start in that flow.
-    if (managed._traceRecorder && typeof body.text === "string") {
-      try { managed._traceRecorder.setUserMessage(body.text); } catch { /* best-effort */ }
+    // Mark the explicit trace boundary: ONE user prompt = ONE trace file, even
+    // if pi-agent internally fires multiple agent_start/end cycles (retry or
+    // auto-compaction). beginPrompt is the start, endPrompt is called below in
+    // actuallyFinish() after the whole prompt (including any retries) settles.
+    // Also forward the displayable username so filenames use "admin" instead of
+    // the internal hex userId.
+    if (managed._traceRecorder) {
+      try {
+        if (typeof body.username === "string" && body.username) managed._traceRecorder.setUsername(body.username);
+        if (typeof body.text === "string") managed._traceRecorder.beginPrompt(body.text);
+      } catch { /* best-effort */ }
     }
 
     // Execute prompt asynchronously; notify SSE to close on completion
@@ -473,6 +478,14 @@ export function createHttpServer(sessionManager: AgentBoxSessionManager): http.S
         outcome: promptOutcome,
         userId: sessionManager.userId,
       });
+
+      // Flush the explicit trace — fires ONCE per user prompt, even if pi-agent
+      // internally executed multiple agent_start/end cycles (retry, compaction).
+      // actuallyFinish() is the definitive "prompt is truly done" point (it waits
+      // for auto_compaction_end / auto_retry_end before firing).
+      if (managed._traceRecorder) {
+        try { managed._traceRecorder.endPrompt(promptOutcome); } catch { /* best-effort */ }
+      }
 
       // Stop buffering
       if (managed._bufferUnsub) {
