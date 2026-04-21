@@ -441,6 +441,14 @@ export function createHttpServer(sessionManager: AgentBoxSessionManager): http.S
       } catch { /* best-effort, don't block prompt */ }
     }
 
+    // Hand the raw user text to the trace recorder so the upcoming agent_start
+    // can associate the correct userMessage with the trace. Without this, web
+    // mode traces end up with an empty userMessage — pi-agent doesn't reliably
+    // emit message_end{role:"user"} before agent_start in that flow.
+    if (managed._traceRecorder && typeof body.text === "string") {
+      try { managed._traceRecorder.setUserMessage(body.text); } catch { /* best-effort */ }
+    }
+
     // Execute prompt asynchronously; notify SSE to close on completion
     console.log(`[agentbox-http] Starting prompt for session ${managed.id} [lang=${detectedLang}]`);
 

@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import {
   InteractiveMode,
@@ -13,6 +14,7 @@ import { saveSessionKnowledge } from "./memory/session-summarizer.js";
 // topic-consolidator import removed — consolidation disabled
 import type { BrainType } from "./core/brain-session.js";
 import { debugPodGC, debugPodCache } from "./tools/infra/debug-pod.js";
+import { maybeCreateTraceRecorder } from "./core/trace-recorder.js";
 
 
 // Parse arguments
@@ -114,6 +116,22 @@ if (memoryIndexer) {
   const cliMemoryDir = path.resolve(process.cwd(), config.paths.userDataDir, "memory");
   memoryIndexer.purgeStaleInvestigations(cliMemoryDir)
     .catch(err => console.warn("[siclaw] Startup maintenance failed:", err));
+}
+
+// Trace recorder — writes per-prompt JSON traces to .siclaw/traces for offline
+// retrospective. Not exposed via HTTP/SSE. Disable with SICLAW_TRACE_DISABLE=1.
+const traceRecorder = maybeCreateTraceRecorder({
+  sessionId: sessionManager.getSessionId?.() ?? `cli-${Date.now()}`,
+  userId: (() => { try { return os.userInfo().username; } catch { return process.env.USER ?? "unknown"; } })(),
+  mode: "cli",
+  brainType: brain.brainType,
+  getSessionStats: () => brain.getSessionStats(),
+  getModel: () => brain.getModel(),
+});
+if (traceRecorder) {
+  traceRecorder.attach(brain);
+  const traceDir = process.env.SICLAW_TRACE_DIR ?? path.join(process.cwd(), ".siclaw", "traces");
+  console.log(`[siclaw] Trace recording → ${path.relative(process.cwd(), traceDir) || traceDir}`);
 }
 
 // Debug: subscribe to all session events and write to log file
@@ -228,6 +246,10 @@ if (session.sessionFile) {
   }
 }
 
+// Close trace recorder — flushes any in-flight trace.
+if (traceRecorder) {
+  try { traceRecorder.close(); } catch { /* ignore */ }
+}
 // Clean up cached debug pods
 try { await debugPodCache.evictAll(); } catch { /* ignore */ }
 // Shutdown MCP connections
