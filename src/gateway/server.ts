@@ -24,6 +24,7 @@ import fs from "node:fs";
 import path from "node:path";
 import http from "node:http";
 import https from "node:https";
+import { getTraceStore } from "../core/trace-store.js";
 import { WebSocketServer, WebSocket } from "ws";
 import type { RuntimeConfig } from "./config.js";
 import type { AgentBoxManager } from "./agentbox/manager.js";
@@ -90,6 +91,92 @@ export interface StartRuntimeOptions {
   certManager?: CertificateManager;
 }
 
+/** Format unix-ms as Beijing "YYYY-MM-DD HH:mm:ss.SSS" for trace query filters. */
+function formatBeijingMs(ms: number): string {
+  const d = new Date(ms + 8 * 3600_000);
+  const p2 = (n: number) => (n < 10 ? `0${n}` : String(n));
+  const p3 = (n: number) => (n < 10 ? `00${n}` : n < 100 ? `0${n}` : String(n));
+  return `${d.getUTCFullYear()}-${p2(d.getUTCMonth() + 1)}-${p2(d.getUTCDate())} ` +
+         `${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())}:${p2(d.getUTCSeconds())}.${p3(d.getUTCMilliseconds())}`;
+}
+
+/**
+ * GET /api/traces           — list persisted traces (keyset paginated)
+ * GET /api/traces/:traceKey — full trace JSON body (identical to the on-disk file)
+ *
+ * Served by Runtime (always-on) rather than AgentBox (lazy-spawned) — querying
+ * traces is a pure DB read and must not require having spawned an agent.
+ */
+async function handleTracesQuery(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  const store = await getTraceStore();
+  if (!store) {
+    res.writeHead(503, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Trace store unavailable (no sinks configured; set SICLAW_TRACE_MYSQL_URL or SICLAW_TRACE_SQLITE_ENABLED=1)" }));
+    return;
+  }
+
+  const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
+  const pathname = url.pathname;
+
+  // GET /api/traces/:traceKey — single trace body
+  if (pathname !== "/api/traces") {
+    const m = pathname.match(/^\/api\/traces\/([^/]+)$/);
+    if (!m) {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Not found" }));
+      return;
+    }
+    const traceKey = decodeURIComponent(m[1]);
+    const rec = await store.getById(traceKey);
+    if (!rec) {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Trace not found" }));
+      return;
+    }
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(rec.bodyJson);
+    return;
+  }
+
+  // GET /api/traces — paginated list
+  const q = url.searchParams;
+  const num = (k: string): number | undefined => {
+    const v = q.get(k);
+    if (v === null || v === "") return undefined;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : undefined;
+  };
+  const beijingStr = (k: string): string | undefined => {
+    const v = q.get(k);
+    if (!v) return undefined;
+    const asNum = Number(v);
+    if (Number.isFinite(asNum) && String(asNum) === v.trim()) return formatBeijingMs(asNum);
+    return v;
+  };
+
+  const nowMs = Date.now();
+  let from = beijingStr("from");
+  const to = beijingStr("to");
+  const lastHours = num("lastHours");
+  const lastDays = num("lastDays");
+  if (from === undefined && lastHours !== undefined) from = formatBeijingMs(nowMs - lastHours * 3600_000);
+  if (from === undefined && lastDays !== undefined)  from = formatBeijingMs(nowMs - lastDays * 86400_000);
+
+  const result = await store.list({
+    userId: q.get("userId") ?? undefined,
+    username: q.get("username") ?? undefined,
+    from,
+    to,
+    minDurationMs: num("minDurationMs"),
+    outcome: q.get("outcome") ?? undefined,
+    limit: num("limit"),
+    cursorStartedAt: q.get("cursorStartedAt") ?? undefined,
+    cursorId: q.get("cursorId") ?? undefined,
+  });
+  res.writeHead(200, { "Content-Type": "application/json" });
+  res.end(JSON.stringify(result));
+}
+
 export async function startRuntime(opts: StartRuntimeOptions): Promise<RuntimeServer> {
   const { config, agentBoxManager, spawner, frontendClient } = opts;
 
@@ -121,6 +208,7 @@ export async function startRuntime(opts: StartRuntimeOptions): Promise<RuntimeSe
   rpcMethods.set("chat.send", async (params, context: RpcContext) => {
     const agentId = (params.agentId as string) || context.proxy?.agentId;
     const userId = params.userId as string;
+    const username = params.username as string | undefined;
     const orgId = params.orgId as string | undefined;
     const text = params.text as string;
     const incomingSessionId = params.sessionId as string | undefined;
@@ -148,6 +236,7 @@ export async function startRuntime(opts: StartRuntimeOptions): Promise<RuntimeSe
       sessionId,
       text,
       agentId,
+      username,
       modelProvider: params.modelProvider as string | undefined,
       modelId: params.modelId as string | undefined,
       systemPromptTemplate: params.systemPrompt as string | undefined,
@@ -462,6 +551,21 @@ export async function startRuntime(opts: StartRuntimeOptions): Promise<RuntimeSe
           res.end(JSON.stringify({ error: "Internal server error" }));
         }
       })();
+      return;
+    }
+
+    // ── Trace query API ───────────────────────────────────
+    // Pure DB read; served by Runtime (always-on) rather than AgentBox
+    // (lazy-spawned) so queries work immediately with zero dependency on
+    // agent runtime state.
+    if (url.startsWith("/api/traces") && method === "GET") {
+      handleTracesQuery(req, res).catch((err) => {
+        console.error("[runtime] /api/traces handler error:", err);
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Trace query failed" }));
+        }
+      });
       return;
     }
 

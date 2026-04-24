@@ -23,6 +23,7 @@ import { createMemoryIndexer, type MemoryIndexer } from "../memory/index.js";
 import { saveSessionKnowledge } from "../memory/session-summarizer.js";
 import { loadConfig, getEmbeddingConfig } from "../core/config.js";
 import { emitDiagnostic } from "../shared/diagnostic-events.js";
+import { maybeCreateTraceRecorder, type TraceRecorder } from "../core/trace-recorder.js";
 // topic-consolidator import removed — consolidation disabled
 
 export interface ManagedSession {
@@ -65,6 +66,10 @@ export interface ManagedSession {
   _lastSavedMessageCount: number;
   /** Pending release timer (cleared when a new prompt arrives before TTL expires) */
   _releaseTimer: ReturnType<typeof setTimeout> | null;
+  /** Trace recorder — writes per-prompt JSON to .siclaw/traces and DB via TraceStore. null when disabled. */
+  _traceRecorder?: TraceRecorder | null;
+  /** Unsubscribe fn for trace recorder's brain subscription. */
+  _traceUnsub?: (() => void) | null;
 }
 
 export interface PersistedDpStateSnapshot {
@@ -270,6 +275,28 @@ export class AgentBoxSessionManager {
 
     this.sessions.set(id, managed);
     emitDiagnostic({ type: "session_created", sessionId: id });
+
+    // Trace recorder — writes per-prompt JSON traces to .siclaw/traces and, if
+    // configured, a row to the TraceStore (SQLite/MySQL). TraceStore is the
+    // only storage coupling; recorder never touches DB drivers or HTTP APIs
+    // directly. Disable with SICLAW_TRACE_DISABLE=1.
+    try {
+      const recorder = await maybeCreateTraceRecorder({
+        sessionId: id,
+        userId: this.userId,
+        mode: effectiveMode,
+        brainType: result.brain.brainType,
+        getSessionStats: () => managed!.brain.getSessionStats(),
+        getModel: () => managed!.brain.getModel(),
+        dpStateRef: result.dpStateRef,
+      });
+      if (recorder) {
+        managed._traceRecorder = recorder;
+        managed._traceUnsub = recorder.attach(managed.brain);
+      }
+    } catch (err) {
+      console.warn(`[agentbox-session] Trace recorder setup failed for ${id}:`, err);
+    }
 
     // Tool execution timing (for tool_call diagnostic events).
     // NOTE: tool_execution_start/end events depend on pi-agent's event stream —
@@ -504,6 +531,18 @@ export class AgentBoxSessionManager {
       }
     } catch (err) {
       console.warn(`[agentbox-session] Memory auto-save failed for ${sessionId}:`, err);
+    }
+
+    // 1b. Close trace recorder — flushes any in-flight trace to disk + DB.
+    if (managed._traceUnsub) {
+      try { managed._traceUnsub(); } catch { /* ignore */ }
+      managed._traceUnsub = null;
+    }
+    if (managed._traceRecorder) {
+      try { await managed._traceRecorder.close(); } catch (err) {
+        console.warn(`[agentbox-session] Trace recorder close failed for ${sessionId}:`, err);
+      }
+      managed._traceRecorder = null;
     }
 
     // 2. Shutdown per-session MCP connections
