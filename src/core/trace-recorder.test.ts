@@ -117,8 +117,10 @@ describe("TraceRecorder", () => {
     expect(t.endedAt).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}$/);
 
     expect(t.stats.tokensDelta).toBeDefined();
-    // schemaVersion has been bumped to "1.1" for the slimmed schema.
-    expect(t.schemaVersion).toBe("1.1");
+    // schemaVersion 1.2 since isInjectedPrompt + dpStatusEnd were added.
+    expect(t.schemaVersion).toBe("1.2");
+    expect(typeof t.isInjectedPrompt).toBe("boolean");
+    expect(t.dpStatusEnd).toBe("idle");
     // Redundant fields removed.
     expect(t.traceId).toBeUndefined();
     expect(t.eventCount).toBeUndefined();
@@ -477,5 +479,51 @@ describe("TraceRecorder", () => {
     rec.close();
 
     expect(readTraces()).toHaveLength(1);
+  });
+
+  // ── isInjectedPrompt classification ─────────────────────
+  // Rule: injected = TRUE only when the prompt body is 100% machine-generated
+  // by a UI button click. If the user typed any of the content (even with a
+  // marker prefix like "[Deep Investigation]\n..."), it's NOT injected.
+  describe("isInjectedPrompt classification", () => {
+    async function flushAndRead(userMessage: string): Promise<boolean> {
+      const rec = makeRecorder(`sess-inj-${Math.random().toString(36).slice(2, 8)}`);
+      await rec.beginPrompt(userMessage);
+      await rec.endPrompt("completed");
+      await rec.close();
+      const files = fs.readdirSync(tmpDir).filter((f) => f.startsWith("trace-"));
+      const body = JSON.parse(fs.readFileSync(path.join(tmpDir, files[files.length - 1]), "utf-8"));
+      return body.isInjectedPrompt as boolean;
+    }
+
+    // ── should be TRUE (pure canned button clicks) ───────
+    it.each([
+      ["[DP_CONFIRM]\nThe user has confirmed hypotheses.",              "DP_CONFIRM button"],
+      ["[DP_SKIP]\nSkip validation and present conclusion.",            "DP_SKIP button"],
+      ["[DP_REINVESTIGATE]\nRe-investigate from a different angle.",    "DP_REINVESTIGATE default (blank hint)"],
+      ["[Feedback]",                                                     "Feedback button"],
+      ["[investigation feedback: confirmed] investigationId=inv-abc",    "verdict-only, no comment"],
+      ["[investigation feedback: corrected] investigationId=inv-abc",    "corrected verdict, no comment"],
+      ["[investigation feedback: rejected] investigationId=inv-abc",     "rejected verdict, no comment"],
+      ["Your conclusion may not be the root cause. Please dig deeper — trace where the problematic values, configurations, or states come from.",
+                                                                         "dig-deeper button"],
+    ])("classifies %j (%s) as injected", async (msg) => {
+      expect(await flushAndRead(msg)).toBe(true);
+    });
+
+    // ── should be FALSE (user-typed content, even with marker prefix) ──
+    it.each([
+      ["[Deep Investigation]\n当前集群有没有网络超时问题？",               "Deep Investigation toggle + user question"],
+      ["[DP_ADJUST]\n把第 2 个假设权重调低一点",                           "DP_ADJUST with user adjustment"],
+      ["[DP_REINVESTIGATE]\n从调度器日志角度再查一遍",                     "DP_REINVESTIGATE with custom hint"],
+      ["[investigation feedback: corrected] investigationId=inv-abc 其实根因是 DNS 不是 CNI",
+                                                                         "corrected verdict + user comment"],
+      ["[investigation feedback: rejected] investigationId=inv-abc 这些都不对",
+                                                                         "rejected verdict + user comment"],
+      ["帮我查一下 nginx pod 为什么 crash",                                "plain user prompt"],
+      ["",                                                                "empty string"],
+    ])("classifies %j (%s) as NOT injected", async (msg) => {
+      expect(await flushAndRead(msg)).toBe(false);
+    });
   });
 });

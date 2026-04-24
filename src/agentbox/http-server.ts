@@ -450,8 +450,8 @@ export function createHttpServer(sessionManager: AgentBoxSessionManager): http.S
     if (managed._traceRecorder) {
       try {
         if (typeof body.username === "string" && body.username) managed._traceRecorder.setUsername(body.username);
-        if (typeof body.text === "string") managed._traceRecorder.beginPrompt(body.text);
-      } catch { /* best-effort */ }
+        if (typeof body.text === "string") await managed._traceRecorder.beginPrompt(body.text);
+      } catch (err) { console.warn("[agentbox-http] trace-recorder beginPrompt failed:", err); }
     }
 
     // Execute prompt asynchronously; notify SSE to close on completion
@@ -484,7 +484,11 @@ export function createHttpServer(sessionManager: AgentBoxSessionManager): http.S
       // actuallyFinish() is the definitive "prompt is truly done" point (it waits
       // for auto_compaction_end / auto_retry_end before firing).
       if (managed._traceRecorder) {
-        try { managed._traceRecorder.endPrompt(promptOutcome); } catch { /* best-effort */ }
+        // Fire-and-forget: actuallyFinish() is a sync callback, and we don't
+        // want to block the SSE stream close on DB flush. Failures are warned.
+        managed._traceRecorder.endPrompt(promptOutcome).catch((err) => {
+          console.warn("[agentbox-http] trace-recorder endPrompt failed:", err);
+        });
       }
 
       // Stop buffering
@@ -709,7 +713,8 @@ export function createHttpServer(sessionManager: AgentBoxSessionManager): http.S
     // beginPrompt(), so without this the DP button clicks ([DP_CONFIRM],
     // [DP_ADJUST], [DP_SKIP], [DP_REINVESTIGATE]) leave zero audit trail.
     if (managed._traceRecorder) {
-      try { managed._traceRecorder.recordSteerEvent(body.text); } catch { /* best-effort */ }
+      try { await managed._traceRecorder.recordSteerEvent(body.text); }
+      catch (err) { console.warn("[agentbox-http] recordSteerEvent failed:", err); }
     }
     try {
       await managed.brain.steer(body.text);

@@ -121,7 +121,7 @@ if (memoryIndexer) {
 // Trace recorder — writes per-prompt JSON traces to .siclaw/traces for offline
 // retrospective. Not exposed via HTTP/SSE. Disable with SICLAW_TRACE_DISABLE=1.
 const osUsername = (() => { try { return os.userInfo().username; } catch { return process.env.USER ?? "unknown"; } })();
-const traceRecorder = maybeCreateTraceRecorder({
+const traceRecorder = await maybeCreateTraceRecorder({
   sessionId: sessionManager.getSessionId?.() ?? `cli-${Date.now()}`,
   userId: osUsername,
   username: osUsername,
@@ -140,7 +140,7 @@ if (traceRecorder) {
   // multiple agent_start/end cycles (empty-response retry, auto-compaction).
   const origSessionPrompt = session.prompt.bind(session);
   (session as unknown as { prompt: (text: string) => Promise<void> }).prompt = async (text: string) => {
-    traceRecorder.beginPrompt(text);
+    await traceRecorder.beginPrompt(text);
     let outcome: "completed" | "error" = "completed";
     try {
       await origSessionPrompt(text);
@@ -148,7 +148,7 @@ if (traceRecorder) {
       outcome = "error";
       throw err;
     } finally {
-      traceRecorder.endPrompt(outcome);
+      await traceRecorder.endPrompt(outcome);
     }
   };
 }
@@ -267,7 +267,7 @@ if (session.sessionFile) {
 
 // Close trace recorder — flushes any in-flight trace.
 if (traceRecorder) {
-  try { traceRecorder.close(); } catch { /* ignore */ }
+  try { await traceRecorder.close(); } catch { /* ignore */ }
 }
 // Clean up cached debug pods
 try { await debugPodCache.evictAll(); } catch { /* ignore */ }

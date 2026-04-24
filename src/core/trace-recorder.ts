@@ -228,15 +228,15 @@ export class TraceRecorder {
    * explicit-boundary mode: subsequent internal agent_start/agent_end events
    * will NOT split the trace into multiple files.
    */
-  beginPrompt(userMessage: string): void {
+  async beginPrompt(userMessage: string): Promise<void> {
     this.explicitMode = true;
-    this.startTrace(userMessage);
+    await this.startTrace(userMessage);
   }
 
   /** Shared trace-reset logic used by both explicit beginPrompt() and the
    *  internal auto-detect path (agent_start in auto mode). */
-  private startTrace(userMessage: string): void {
-    if (this.active) this.flush();
+  private async startTrace(userMessage: string): Promise<void> {
+    if (this.active) await this.flush();
     this.active = true;
     this.promptIdx += 1;
     this.userMessage = userMessage;
@@ -253,14 +253,14 @@ export class TraceRecorder {
     // hangs (e.g. propose_hypotheses infinite loop) the injected prompt /
     // session / DP-status-at-start are preserved in the DB. flush() will
     // later UPSERT the same trace_key with complete data.
-    this.persistInFlightStub();
+    await this.persistInFlightStub();
   }
 
   /** Finalize the current trace. Usually auto-invoked on agent_end. */
-  endPrompt(outcome?: "completed" | "error"): string | null {
+  async endPrompt(outcome?: "completed" | "error"): Promise<string | null> {
     if (!this.active) return null;
     if (outcome) this.outcome = outcome;
-    return this.flush();
+    return await this.flush();
   }
 
   /**
@@ -282,7 +282,7 @@ export class TraceRecorder {
    * is instantaneous from the user's perspective; what happens afterwards
    * (resumed agent work) lands in the main trace's final flush.
    */
-  recordSteerEvent(text: string): void {
+  async recordSteerEvent(text: string): Promise<void> {
     if (!this.opts.store) return;
     try {
       const nowMs = Date.now();
@@ -317,7 +317,7 @@ export class TraceRecorder {
         stats: {},
         steps: [],
       };
-      this.opts.store.upsert({
+      await this.opts.store.upsert({
         id: traceKey,
         sessionId: this.opts.sessionId,
         promptIdx: 0,        // steer is not a top-level prompt — 0 signals "n/a"
@@ -346,8 +346,8 @@ export class TraceRecorder {
   }
 
   /** Release all resources. Writes any in-flight trace first. */
-  close(): void {
-    if (this.active) this.flush();
+  async close(): Promise<void> {
+    if (this.active) await this.flush();
     if (this.unsubscribeDiag) {
       this.unsubscribeDiag();
       this.unsubscribeDiag = null;
@@ -384,7 +384,7 @@ export class TraceRecorder {
    *
    * Best-effort: any error is warned but does not break the live trace flow.
    */
-  private persistInFlightStub(): void {
+  private async persistInFlightStub(): Promise<void> {
     if (!this.opts.store || !this.currentTraceKey) return;
     try {
       const startedAtStr = formatBeijing(this.startedAtMs);
@@ -406,7 +406,7 @@ export class TraceRecorder {
         pending: true,
         note: "Partial trace — the prompt has not yet finished. A completed row will overwrite this via UPSERT once endPrompt() fires. If this note survives, the agent hung or the process died mid-prompt.",
       };
-      this.opts.store.upsert({
+      await this.opts.store.upsert({
         id: this.currentTraceKey,
         sessionId: this.opts.sessionId,
         promptIdx: this.promptIdx,
@@ -456,9 +456,14 @@ export class TraceRecorder {
     // agent_start: in AUTO mode, opens a new trace. In EXPLICIT mode, internal
     // cycles (empty-response retry / auto-compaction continuation) are merged
     // into the current trace by external beginPrompt — do nothing here.
+    //
+    // Fire-and-forget the async startTrace/flush from sync event handlers:
+    // brain.subscribe() callbacks don't await, and we don't want to block
+    // event processing on DB writes. Unhandled rejections must be caught.
     if (type === "agent_start") {
       if (!this.explicitMode) {
-        this.startTrace(this.lastUserMessageBuffered);
+        this.startTrace(this.lastUserMessageBuffered).catch((err) =>
+          console.warn("[trace-recorder] auto startTrace failed:", err));
       }
       return;
     }
@@ -469,7 +474,8 @@ export class TraceRecorder {
       case "agent_end":
         // In EXPLICIT mode, external endPrompt drives the flush; ignore.
         if (this.explicitMode) return;
-        this.flush();
+        this.flush().catch((err) =>
+          console.warn("[trace-recorder] auto flush failed:", err));
         return;
 
       case "turn_start":
@@ -672,7 +678,7 @@ export class TraceRecorder {
 
   // ── Flush ───────────────────────────────────────────
 
-  private flush(): string | null {
+  private async flush(): Promise<string | null> {
     if (!this.active) return null;
     this.active = false;
     const endedAtMs = Date.now();
@@ -755,7 +761,7 @@ export class TraceRecorder {
         // the already-stamped currentTraceKey — the *DB* row is keyed there.
         const traceId = this.currentTraceKey ?? fname.replace(/\.json$/, "");
         const toolCallCount = this.steps.reduce((n, s) => n + (s.kind === "tool_call" ? 1 : 0), 0);
-        this.opts.store.upsert({
+        await this.opts.store.upsert({
           id: traceId,
           sessionId: this.opts.sessionId,
           promptIdx: this.promptIdx,
@@ -871,16 +877,20 @@ function safeCall<T>(fn: (() => T | undefined) | undefined): T | undefined {
 /**
  * Create a TraceRecorder unless SICLAW_TRACE_DISABLE=1.
  * Default trace dir: <cwd>/.siclaw/traces (override with SICLAW_TRACE_DIR).
+ *
+ * Async because the default store factory (`getTraceStore`) performs MySQL
+ * schema init on first use. Callers typically `await` this once at session
+ * setup, so the cost is amortized.
  */
-export function maybeCreateTraceRecorder(
+export async function maybeCreateTraceRecorder(
   opts: Omit<TraceRecorderOpts, "traceDir"> & { traceDir?: string },
-): TraceRecorder | null {
+): Promise<TraceRecorder | null> {
   if (process.env.SICLAW_TRACE_DISABLE === "1") return null;
   const traceDir =
     opts.traceDir ??
     process.env.SICLAW_TRACE_DIR ??
     path.join(process.cwd(), ".siclaw", "traces");
   // Auto-attach the process-level trace store unless caller already supplied one.
-  const store = opts.store !== undefined ? opts.store : getTraceStore();
+  const store = opts.store !== undefined ? opts.store : await getTraceStore();
   return new TraceRecorder({ ...opts, traceDir, store });
 }

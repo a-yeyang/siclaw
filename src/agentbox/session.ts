@@ -271,7 +271,7 @@ export class AgentBoxSessionManager {
     // offline retrospective. Filesystem only, not exposed via HTTP/SSE/WS.
     // Disable with SICLAW_TRACE_DISABLE=1; override path with SICLAW_TRACE_DIR.
     try {
-      const recorder = maybeCreateTraceRecorder({
+      const recorder = await maybeCreateTraceRecorder({
         sessionId: id,
         userId: this.userId,
         mode: effectiveMode,
@@ -523,7 +523,7 @@ export class AgentBoxSessionManager {
       managed._traceUnsub = null;
     }
     if (managed._traceRecorder) {
-      try { managed._traceRecorder.close(); } catch (err) {
+      try { await managed._traceRecorder.close(); } catch (err) {
         console.warn(`[agentbox-session] Trace recorder close failed for ${sessionId}:`, err);
       }
       managed._traceRecorder = null;

@@ -209,10 +209,10 @@ function formatBeijingMs(ms: number): string {
  */
 async function handleTracesQuery(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   const { getTraceStore } = await import("../core/trace-store.js");
-  const store = getTraceStore();
+  const store = await getTraceStore();
   if (!store) {
     res.writeHead(503, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Trace store unavailable (node:sqlite missing or SICLAW_TRACE_DISABLE set)" }));
+    res.end(JSON.stringify({ error: "Trace store unavailable (no sinks configured; set SICLAW_TRACE_MYSQL_URL or SICLAW_TRACE_SQLITE_ENABLED=1)" }));
     return;
   }
 
@@ -228,7 +228,7 @@ async function handleTracesQuery(req: http.IncomingMessage, res: http.ServerResp
       return;
     }
     const traceKey = decodeURIComponent(m[1]);
-    const rec = store.getById(traceKey);
+    const rec = await store.getById(traceKey);
     if (!rec) {
       res.writeHead(404, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "Trace not found" }));
@@ -263,7 +263,7 @@ async function handleTracesQuery(req: http.IncomingMessage, res: http.ServerResp
   if (from === undefined && lastHours !== undefined) from = formatBeijingMs(nowMs - lastHours * 3600_000);
   if (from === undefined && lastDays !== undefined)  from = formatBeijingMs(nowMs - lastDays * 86400_000);
 
-  const result = store.list({
+  const result = await store.list({
     userId: q.get("userId") ?? undefined,
     username: q.get("username") ?? undefined,
     from,
