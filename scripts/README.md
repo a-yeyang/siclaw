@@ -23,7 +23,6 @@ curl -fsSL https://get.helm.sh/helm-v3.16.2-linux-amd64.tar.gz | tar -xz -C /tmp
 mv /tmp/linux-amd64/helm ~/bin/helm && chmod +x ~/bin/helm
 echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
 ```
-
 ---
 
 ## 1. 构建三个镜像
