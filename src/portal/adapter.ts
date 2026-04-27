@@ -28,6 +28,24 @@ function jsonParam(value: unknown): string | null {
   return typeof value === "string" ? value : JSON.stringify(value);
 }
 
+/**
+ * Truncate a string to fit a VARCHAR(N) column. Pass-through for null/undefined.
+ *
+ * Why: MySQL strict mode rejects oversized VARCHAR writes with error 1406
+ * ("Data too long for column"), aborting the surrounding request. Several
+ * write paths (chat.ensureSession, notifications) accept user-provided text
+ * as a "title" — e.g. the dig-deeper canned paragraph easily exceeds 255
+ * chars. SQLite silently truncates (or rather, ignores the length hint), so
+ * the bug only surfaces on MySQL. Defensive slice keeps the two dialects
+ * behaviourally aligned and matches the user-facing intent ("truncate, don't
+ * fail"). All call sites must use this helper, not bare slice, so the policy
+ * is auditable from one place.
+ */
+function truncForVarchar(value: string | null | undefined, max: number): string | null {
+  if (value === null || value === undefined) return null;
+  return value.length > max ? value.slice(0, max) : value;
+}
+
 export function registerAdapterRoutes(router: RestRouter, internalSecret: string): void {
   // GET /api/internal/siclaw/agent/:agentId — agent basic info
   router.get("/api/internal/siclaw/agent/:agentId", async (req, res, params) => {
