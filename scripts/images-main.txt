@@ -1,0 +1,7 @@
+# 镜像清单（main 分支裸跑版） — 由 deploy-k8s-main.sh 读取
+# 每行一个 image ref，三个组件必须共享同一 registry+tag
+# 空行和 # 开头的注释会被忽略
+
+registry-cn-beijing.siflow.cn/k8s/siclaw-portal:main-5a67f39
+registry-cn-beijing.siflow.cn/k8s/siclaw-runtime:main-5a67f39
+registry-cn-beijing.siflow.cn/k8s/siclaw-agentbox:main-5a67f39

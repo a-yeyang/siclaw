@@ -1884,6 +1884,12 @@ export function buildAdapterRpcHandlers(): Map<string, (params: any, agentId: st
   ): Promise<void> {
     if (!callerAgentId) return;
     if (!sessionId) return;
+    // Phone-home mode: Runtime authenticates with placeholder X-Agent-Id="runtime"
+    // and relays per-agent RPCs on behalf of all hosted agents. The real agent
+    // UUID is not carried at the connection level here, so this check would
+    // always fail and break every chat write. Trust the Runtime in that case —
+    // same pattern as the credential.* handlers in commit 55738cd.
+    if (callerAgentId === "runtime") return;
     const [rows] = (await db.query(
       "SELECT agent_id FROM chat_sessions WHERE id = ?",
       [sessionId],
