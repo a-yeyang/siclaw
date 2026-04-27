@@ -8,6 +8,7 @@
   },
   "files": [
     "dist/",
+    "portal-web/dist/",
     "siclaw.mjs",
     "skills/",
     "settings.example.json"
@@ -88,6 +89,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "prepublishOnly": "npm run build && cd portal-web && npm ci && npm run build",
     "dev": "tsx src/cli-main.ts",
     "dev:runtime": "tsx src/gateway-main.ts",
     "dev:agentbox": "tsx src/agentbox-main.ts",
@@ -97,6 +99,12 @@
     "start:agentbox": "node dist/agentbox-main.js",
     "start:portal": "node dist/portal-main.js",
     "test": "vitest run",
+    "smoke:dp-live": "node scripts/smoke/dp-live-checkpoint.mjs",
+    "smoke:delegate": "node scripts/smoke/real-delegate.mjs",
+    "smoke:delegate-batch": "node scripts/smoke/real-delegate-batch.mjs",
+    "smoke:delegate-async": "node scripts/smoke/real-delegate-async.mjs",
+    "smoke:delegate-ui": "node scripts/smoke/real-delegate-ui.mjs",
+    "smoke:delegate-batch-ui": "node scripts/smoke/real-delegate-batch-ui.mjs",
     "docker:build:runtime": "docker build -f Dockerfile.gateway -t siclaw/siclaw-runtime:latest .",
     "docker:build:portal": "docker build -f Dockerfile.portal -t siclaw/siclaw-portal:latest .",
     "docker:build:agentbox": "docker build -f Dockerfile.agentbox -t siclaw/siclaw-agentbox:latest .",

@@ -9,6 +9,7 @@ import crypto from "node:crypto";
 import http from "node:http";
 import { getDb } from "../gateway/db.js";
 import { buildUpsert, safeParseJson, toSqlTimestamp } from "../gateway/dialect-helpers.js";
+import { createTaskNotification } from "./notification-api.js";
 import {
   sendJson,
   parseBody,
@@ -18,6 +19,11 @@ import {
 function requireInternalAuth(req: http.IncomingMessage, internalSecret: string): boolean {
   const token = req.headers["x-auth-token"] as string | undefined;
   return token === internalSecret;
+}
+
+function jsonParam(value: unknown): string | null {
+  if (value === null || value === undefined || value === "") return null;
+  return typeof value === "string" ? value : JSON.stringify(value);
 }
 
 export function registerAdapterRoutes(router: RestRouter, internalSecret: string): void {
@@ -550,6 +556,8 @@ export function registerAdapterRoutes(router: RestRouter, internalSecret: string
     const body = await parseBody<{
       session_id: string; agent_id: string; user_id: string;
       title?: string; preview?: string; origin?: string;
+      parent_session_id?: string | null; parent_agent_id?: string | null;
+      delegation_id?: string | null; target_agent_id?: string | null;
     }>(req);
     const db = getDb();
     // last_active_at omitted: relies on schema DEFAULT CURRENT_TIMESTAMP for
@@ -558,9 +566,11 @@ export function registerAdapterRoutes(router: RestRouter, internalSecret: string
     const upsert = buildUpsert(
       db,
       "chat_sessions",
-      ["id", "agent_id", "user_id", "title", "preview", "message_count", "origin"],
+      ["id", "agent_id", "user_id", "title", "preview", "message_count", "origin", "parent_session_id", "parent_agent_id", "delegation_id", "target_agent_id"],
       [body.session_id, body.agent_id, body.user_id,
-       body.title || "New Session", body.preview || null, 0, body.origin || null],
+       body.title || "New Session", body.preview || null, 0, body.origin || null,
+       body.parent_session_id ?? null, body.parent_agent_id ?? null,
+       body.delegation_id ?? null, body.target_agent_id ?? null],
       ["id"],
       [{ col: "last_active_at", expr: "CURRENT_TIMESTAMP" }],
     );
@@ -578,16 +588,20 @@ export function registerAdapterRoutes(router: RestRouter, internalSecret: string
       session_id: string; role: string; content: string;
       tool_name?: string; tool_input?: string; metadata?: any;
       outcome?: string; duration_ms?: number;
+      from_agent_id?: string | null; parent_session_id?: string | null;
+      delegation_id?: string | null; target_agent_id?: string | null;
     }>(req);
     const id = crypto.randomUUID();
     const db = getDb();
     await db.query(
-      `INSERT INTO chat_messages (id, session_id, role, content, tool_name, tool_input, metadata, outcome, duration_ms)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO chat_messages (id, session_id, role, content, tool_name, tool_input, metadata, outcome, duration_ms, from_agent_id, parent_session_id, delegation_id, target_agent_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, body.session_id, body.role, body.content,
        body.tool_name || null, body.tool_input || null,
-       body.metadata ? JSON.stringify(body.metadata) : null,
-       body.outcome || null, body.duration_ms ?? null],
+       jsonParam(body.metadata),
+       body.outcome || null, body.duration_ms ?? null,
+       body.from_agent_id ?? null, body.parent_session_id ?? null,
+       body.delegation_id ?? null, body.target_agent_id ?? null],
     );
     // Bump session message_count
     await db.query(
@@ -968,7 +982,7 @@ export function registerAdapterRoutes(router: RestRouter, internalSecret: string
     const cutoff = toSqlTimestamp(Date.now() - days * 86400e3);
     const [sessResult] = await db.query(
       `DELETE FROM chat_sessions
-       WHERE origin = 'task' AND last_active_at < ?`,
+       WHERE origin IN ('task', 'delegation') AND last_active_at < ?`,
       [cutoff],
     ) as any;
     const [runsResult] = await db.query(
@@ -1172,7 +1186,8 @@ export function registerAdapterRoutes(router: RestRouter, internalSecret: string
     }
     params.push(limit);
     const [rows] = await db.query(
-      `SELECT id, session_id, role, content, tool_name, tool_input, metadata, outcome, duration_ms, created_at
+      `SELECT id, session_id, role, content, tool_name, tool_input, metadata, outcome, duration_ms,
+              from_agent_id, parent_session_id, delegation_id, target_agent_id, created_at
        FROM chat_messages WHERE ${where} ORDER BY created_at DESC, id DESC LIMIT ?`,
       params,
     ) as any;
@@ -1233,7 +1248,7 @@ export function registerAdapterRoutes(router: RestRouter, internalSecret: string
 
     const db = getDb();
     const sessionParams: unknown[] = [cutoff];
-    let totalSessionsSql = "SELECT COUNT(*) AS c FROM chat_sessions WHERE created_at >= ?";
+    let totalSessionsSql = "SELECT COUNT(*) AS c FROM chat_sessions WHERE created_at >= ? AND (origin IS NULL OR origin NOT IN ('task', 'delegation'))";
     if (userFilter) { totalSessionsSql += " AND user_id = ?"; sessionParams.push(userFilter); }
     const [sRows] = await db.query(totalSessionsSql, sessionParams) as any;
     const totalSessions = Number(sRows[0]?.c ?? 0);
@@ -1241,7 +1256,9 @@ export function registerAdapterRoutes(router: RestRouter, internalSecret: string
     const pParams: unknown[] = [cutoff];
     let totalPromptsSql = `SELECT COUNT(*) AS c FROM chat_messages m
       JOIN chat_sessions s ON m.session_id = s.id
-      WHERE m.role = 'user' AND m.created_at >= ?`;
+      WHERE m.role = 'user' AND m.created_at >= ?
+        AND (s.origin IS NULL OR s.origin NOT IN ('task', 'delegation'))
+        AND (m.metadata IS NULL OR m.metadata NOT LIKE '%"kind":"delegation_event"%')`;
     if (userFilter) { totalPromptsSql += " AND s.user_id = ?"; pParams.push(userFilter); }
     const [pRows] = await db.query(totalPromptsSql, pParams) as any;
     const totalPrompts = Number(pRows[0]?.c ?? 0);
@@ -1251,6 +1268,7 @@ export function registerAdapterRoutes(router: RestRouter, internalSecret: string
       const [uRows] = await db.query(
         `SELECT s.user_id AS userId, COUNT(DISTINCT s.id) AS sessions, SUM(s.message_count) AS messages
          FROM chat_sessions s WHERE s.created_at >= ?
+           AND (s.origin IS NULL OR s.origin NOT IN ('task', 'delegation'))
          GROUP BY s.user_id ORDER BY sessions DESC LIMIT 50`,
         [cutoff],
       ) as any;
@@ -1286,7 +1304,7 @@ export function registerAdapterRoutes(router: RestRouter, internalSecret: string
     const db = getDb();
     const [rows] = await db.query(
       `SELECT m.id, m.session_id AS sessionId, m.tool_name AS toolName,
-              LEFT(m.tool_input, 500) AS toolInput,
+              SUBSTR(m.tool_input, 1, 500) AS toolInput,
               m.outcome, m.duration_ms AS durationMs, m.created_at AS timestamp,
               s.user_id AS userId, s.agent_id AS agentId
        FROM chat_messages m
@@ -1843,6 +1861,40 @@ export function buildAdapterRpcHandlers(): Map<string, (params: any, agentId: st
 
   // --- chat.* ---
 
+  /**
+   * Verify the calling Runtime owns `sessionId` before mutating it.
+   *
+   * The chat.* RPCs receive the connection's authenticated agentId as the
+   * second arg from buildAdapterRpcHandlers. Without this check, a buggy
+   * or compromised Runtime could write rows into another agent's chat
+   * session by passing an arbitrary session_id in the body. internal-api's
+   * validateDelegationEventActor already covers the delegation.* event
+   * surface; this closes the gap on the plain chat.* RPC surface
+   * (chent1996 review #4 / jacoblee #6).
+   *
+   * Permissive on "session not found" so first-write call paths can still
+   * land — the adapter's caller is expected to chat.ensureSession first,
+   * which sets agent_id atomically and is itself protected by the same
+   * authentication.
+   */
+  async function assertSessionBelongsToAgent(
+    db: { query: (sql: string, params?: unknown[]) => Promise<unknown> },
+    sessionId: string,
+    callerAgentId: string,
+  ): Promise<void> {
+    if (!callerAgentId) return;
+    if (!sessionId) return;
+    const [rows] = (await db.query(
+      "SELECT agent_id FROM chat_sessions WHERE id = ?",
+      [sessionId],
+    )) as [Array<{ agent_id: string | null }>, unknown];
+    if (rows.length === 0) return;
+    const ownerAgentId = rows[0].agent_id;
+    if (ownerAgentId && ownerAgentId !== callerAgentId) {
+      throw new Error(`session ${sessionId} not owned by agent ${callerAgentId}`);
+    }
+  }
+
   handlers.set("chat.ensureSession", async (params) => {
     const db = getDb();
     // last_active_at omitted: relies on schema DEFAULT CURRENT_TIMESTAMP for
@@ -1851,9 +1903,11 @@ export function buildAdapterRpcHandlers(): Map<string, (params: any, agentId: st
     const upsert = buildUpsert(
       db,
       "chat_sessions",
-      ["id", "agent_id", "user_id", "title", "preview", "message_count", "origin"],
+      ["id", "agent_id", "user_id", "title", "preview", "message_count", "origin", "parent_session_id", "parent_agent_id", "delegation_id", "target_agent_id"],
       [params.session_id, params.agent_id, params.user_id,
-       params.title || "New Session", params.preview || null, 0, params.origin || null],
+       params.title || "New Session", params.preview || null, 0, params.origin || null,
+       params.parent_session_id ?? null, params.parent_agent_id ?? null,
+       params.delegation_id ?? null, params.target_agent_id ?? null],
       ["id"],
       [{ col: "last_active_at", expr: "CURRENT_TIMESTAMP" }],
     );
@@ -1861,22 +1915,76 @@ export function buildAdapterRpcHandlers(): Map<string, (params: any, agentId: st
     return { ok: true };
   });
 
-  handlers.set("chat.appendMessage", async (params) => {
+  handlers.set("chat.appendMessage", async (params, agentId) => {
     const id = crypto.randomUUID();
     const db = getDb();
+    await assertSessionBelongsToAgent(db, params.session_id, agentId);
     await db.query(
-      `INSERT INTO chat_messages (id, session_id, role, content, tool_name, tool_input, metadata, outcome, duration_ms)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO chat_messages (id, session_id, role, content, tool_name, tool_input, metadata, outcome, duration_ms, from_agent_id, parent_session_id, delegation_id, target_agent_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, params.session_id, params.role, params.content,
        params.tool_name || null, params.tool_input || null,
-       params.metadata ? JSON.stringify(params.metadata) : null,
-       params.outcome || null, params.duration_ms ?? null],
+       jsonParam(params.metadata),
+       params.outcome || null, params.duration_ms ?? null,
+       params.from_agent_id ?? null, params.parent_session_id ?? null,
+       params.delegation_id ?? null, params.target_agent_id ?? null],
     );
     await db.query(
       `UPDATE chat_sessions SET message_count = message_count + 1, last_active_at = CURRENT_TIMESTAMP WHERE id = ?`,
       [params.session_id],
     );
     return { id };
+  });
+
+  handlers.set("chat.updateMessage", async (params, agentId) => {
+    const db = getDb();
+    await assertSessionBelongsToAgent(db, params.session_id, agentId);
+    await db.query(
+      `UPDATE chat_messages
+       SET content = ?, tool_name = ?, tool_input = ?, metadata = ?, outcome = ?, duration_ms = ?,
+           delegation_id = COALESCE(?, delegation_id)
+       WHERE id = ? AND session_id = ?`,
+      [
+        params.content ?? "",
+        params.tool_name || null,
+        params.tool_input || null,
+        jsonParam(params.metadata),
+        params.outcome || null,
+        params.duration_ms ?? null,
+        params.delegation_id ?? null,
+        params.id,
+        params.session_id,
+      ],
+    );
+    await db.query(
+      `UPDATE chat_sessions SET last_active_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [params.session_id],
+    );
+    return { ok: true };
+  });
+
+  handlers.set("chat.updateDelegationToolMessage", async (params, agentId) => {
+    const db = getDb();
+    await assertSessionBelongsToAgent(db, params.session_id, agentId);
+    await db.query(
+      `UPDATE chat_messages
+       SET content = ?, metadata = ?, outcome = ?, duration_ms = ?
+       WHERE session_id = ? AND role = 'tool' AND tool_name = ? AND delegation_id = ?`,
+      [
+        params.content ?? "",
+        jsonParam(params.metadata),
+        params.outcome || null,
+        params.duration_ms ?? null,
+        params.session_id,
+        params.tool_name,
+        params.delegation_id,
+      ],
+    );
+    await db.query(
+      `UPDATE chat_sessions SET last_active_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [params.session_id],
+    );
+    return { ok: true };
   });
 
   handlers.set("chat.getMessages", async (params) => {
@@ -1890,7 +1998,8 @@ export function buildAdapterRpcHandlers(): Map<string, (params: any, agentId: st
     }
     sqlParams.push(limit);
     const [rows] = await db.query(
-      `SELECT id, session_id, role, content, tool_name, tool_input, metadata, outcome, duration_ms, created_at
+      `SELECT id, session_id, role, content, tool_name, tool_input, metadata, outcome, duration_ms,
+              from_agent_id, parent_session_id, delegation_id, target_agent_id, created_at
        FROM chat_messages WHERE ${where} ORDER BY created_at DESC, id DESC LIMIT ?`,
       sqlParams,
     ) as any;
@@ -2058,13 +2167,33 @@ export function buildAdapterRpcHandlers(): Map<string, (params: any, agentId: st
     return { outcome: "ok", task: row };
   });
 
+  // Runtime's TaskCoordinator emits this after each cron run completes.
+  // Missing handler = silent drop = no NotificationBell update = user
+  // thinks the task never ran. The HTTP /api/internal/task-notify route
+  // already existed but no caller reached it; the Runtime uses the RPC path.
+  handlers.set("task.notify", async (params) => {
+    if (!params.userId || !params.taskId || !params.status) {
+      throw new Error("userId, taskId, status are required");
+    }
+    const { id } = await createTaskNotification({
+      userId: params.userId as string,
+      taskId: params.taskId as string,
+      status: params.status as string,
+      agentId: params.agentId as string | undefined,
+      runId: params.runId as string | undefined,
+      title: params.title as string | undefined,
+      message: params.message as string | undefined,
+    });
+    return { id };
+  });
+
   handlers.set("task.prune", async (params) => {
     const db = getDb();
     const days = params.retention_days;
     const cutoff = toSqlTimestamp(Date.now() - days * 86400e3);
     const [sessResult] = await db.query(
       `DELETE FROM chat_sessions
-       WHERE origin = 'task' AND last_active_at < ?`,
+       WHERE origin IN ('task', 'delegation') AND last_active_at < ?`,
       [cutoff],
     ) as any;
     const [runsResult] = await db.query(
@@ -2191,7 +2320,7 @@ export function buildAdapterRpcHandlers(): Map<string, (params: any, agentId: st
 
     const db = getDb();
     const sessionParams: unknown[] = [cutoff];
-    let totalSessionsSql = "SELECT COUNT(*) AS c FROM chat_sessions WHERE created_at >= ?";
+    let totalSessionsSql = "SELECT COUNT(*) AS c FROM chat_sessions WHERE created_at >= ? AND (origin IS NULL OR origin NOT IN ('task', 'delegation'))";
     if (userFilter) { totalSessionsSql += " AND user_id = ?"; sessionParams.push(userFilter); }
     const [sRows] = await db.query(totalSessionsSql, sessionParams) as any;
     const totalSessions = Number(sRows[0]?.c ?? 0);
@@ -2199,7 +2328,9 @@ export function buildAdapterRpcHandlers(): Map<string, (params: any, agentId: st
     const pParams: unknown[] = [cutoff];
     let totalPromptsSql = `SELECT COUNT(*) AS c FROM chat_messages m
       JOIN chat_sessions s ON m.session_id = s.id
-      WHERE m.role = 'user' AND m.created_at >= ?`;
+      WHERE m.role = 'user' AND m.created_at >= ?
+        AND (s.origin IS NULL OR s.origin NOT IN ('task', 'delegation'))
+        AND (m.metadata IS NULL OR m.metadata NOT LIKE '%"kind":"delegation_event"%')`;
     if (userFilter) { totalPromptsSql += " AND s.user_id = ?"; pParams.push(userFilter); }
     const [pRows] = await db.query(totalPromptsSql, pParams) as any;
     const totalPrompts = Number(pRows[0]?.c ?? 0);
@@ -2209,6 +2340,7 @@ export function buildAdapterRpcHandlers(): Map<string, (params: any, agentId: st
       const [uRows] = await db.query(
         `SELECT s.user_id AS userId, COUNT(DISTINCT s.id) AS sessions, SUM(s.message_count) AS messages
          FROM chat_sessions s WHERE s.created_at >= ?
+           AND (s.origin IS NULL OR s.origin NOT IN ('task', 'delegation'))
          GROUP BY s.user_id ORDER BY sessions DESC LIMIT 50`,
         [cutoff],
       ) as any;
@@ -2237,7 +2369,7 @@ export function buildAdapterRpcHandlers(): Map<string, (params: any, agentId: st
     const db = getDb();
     const [rows] = await db.query(
       `SELECT m.id, m.session_id AS sessionId, m.tool_name AS toolName,
-              LEFT(m.tool_input, 500) AS toolInput,
+              SUBSTR(m.tool_input, 1, 500) AS toolInput,
               m.outcome, m.duration_ms AS durationMs, m.created_at AS timestamp,
               s.user_id AS userId, s.agent_id AS agentId
        FROM chat_messages m

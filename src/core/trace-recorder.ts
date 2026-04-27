@@ -295,7 +295,7 @@ export class TraceRecorder {
       const traceKey = `trace-${stamp}-${user}-steer-${rand}`;
       const startedAtStr = formatBeijing(nowMs);
       const model = safeCall(this.opts.getModel);
-      const dpStatus = this.opts.dpStateRef?.status ?? "idle";
+      const dpStatus = this.opts.dpStateRef?.active ? "active" : "idle";
       const injected = isInjectedPromptText(text);
       const body = {
         schemaVersion: "1.2",
@@ -389,7 +389,7 @@ export class TraceRecorder {
     try {
       const startedAtStr = formatBeijing(this.startedAtMs);
       const model = safeCall(this.opts.getModel);
-      const dpStatus = this.opts.dpStateRef?.status ?? "idle";
+      const dpStatus = this.opts.dpStateRef?.active ? "active" : "idle";
       const stubBody = {
         schemaVersion: "1.2",
         sessionId: this.opts.sessionId,
@@ -700,7 +700,10 @@ export class TraceRecorder {
 
     // Sample DP status at the exact moment the prompt finishes — this is the
     // authoritative "where did this prompt leave the workflow" signal.
-    const dpStatusEnd: string = this.opts.dpStateRef?.status ?? "idle";
+    // DP refactor (2026-04-24): the old enum status was replaced by `active: boolean`.
+    // Map active=true → "active", active=false → "idle" so dp_status_end stays a stable
+    // string column readable by downstream tooling.
+    const dpStatusEnd: string = this.opts.dpStateRef?.active ? "active" : "idle";
 
     const trace = {
       // Body schema bumped 1.1 → 1.2 for the new top-level fields

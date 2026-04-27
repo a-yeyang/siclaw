@@ -322,6 +322,7 @@ export function AgentChat({ agentId }: AgentChatProps) {
         {activeSessionId ? (
           <>
             <PilotArea
+              agentId={agentId}
               messages={pilot.messages}
               isLoading={pilot.streaming}
               hasMore={pilot.hasMore}
@@ -332,13 +333,8 @@ export function AgentChat({ agentId }: AgentChatProps) {
               contextUsage={pilot.contextUsage}
               pendingMessages={pilot.pendingMessages}
               onRemovePending={pilot.removePending}
-              investigationProgress={pilot.dpProgress}
               dpActive={pilot.dpActive}
               onSetDpActive={pilot.setDpActive}
-              dpFocus={pilot.dpFocus}
-              dpChecklist={pilot.dpChecklist}
-              onHypothesesConfirmed={pilot.onHypothesesConfirmed}
-              onExitDp={pilot.exitDp}
               sessionKey={activeSessionId}
               onOpenSkillPanel={(msg) => {
                 setSchedulePanelMsg(null)
