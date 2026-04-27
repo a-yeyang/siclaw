@@ -171,24 +171,10 @@ interface AgentRow {
   color: string | null;
 }
 
-export interface CliSnapshotAgentMeta {
-  /** Display name; used as `--agent <name>` value. */
-  name: string;
-  description: string | null;
-  /** Model this agent prefers, if configured in Portal. */
-  modelProvider: string | null;
-  modelId: string | null;
-  icon: string | null;
-  color: string | null;
-}
-
-export interface CliSnapshotActiveAgent {
-  name: string;
-  description: string | null;
-  systemPrompt: string | null;
-  modelProvider: string | null;
-  modelId: string | null;
-}
+// Re-exported from src/shared/ so the agentbox build (which excludes src/portal/)
+// can consume these types without pulling in this server-side module.
+export type { CliSnapshotAgentMeta, CliSnapshotActiveAgent } from "../shared/cli-snapshot-types.js";
+import type { CliSnapshotAgentMeta, CliSnapshotActiveAgent } from "../shared/cli-snapshot-types.js";
 
 export interface CliSnapshotSkill {
   /** Name from SKILL.md frontmatter; used as the materialized directory name. */
