@@ -165,6 +165,22 @@ export class SqliteTraceStore implements TraceStore {
       where.push("outcome = ?");
       params.push(opts.outcome);
     }
+    if (opts.sessionId) {
+      where.push("session_id = ?");
+      params.push(opts.sessionId);
+    }
+    if (opts.mode) {
+      where.push("mode = ?");
+      params.push(opts.mode);
+    }
+    if (typeof opts.isInjectedPrompt === "boolean") {
+      where.push("is_injected_prompt = ?");
+      params.push(opts.isInjectedPrompt ? 1 : 0);
+    }
+    if (opts.dpStatusEnd) {
+      where.push("dp_status_end = ?");
+      params.push(opts.dpStatusEnd);
+    }
     // Keyset cursor: strictly older than (cursorStartedAt, cursorId). Lex sort
     // is safe because YYYY-MM-DD HH:mm:ss.SSS is zero-padded and monotonic.
     if (typeof opts.cursorStartedAt === "string" && opts.cursorStartedAt && opts.cursorId) {
@@ -195,6 +211,11 @@ export class SqliteTraceStore implements TraceStore {
     const row = this.getBodyStmt.get(id) as Record<string, unknown> | undefined;
     if (!row) return null;
     return { ...rowToTraceRow(row), bodyJson: row.body_json as string };
+  }
+
+  async deleteById(id: string): Promise<boolean> {
+    const info = this.db.prepare("DELETE FROM agent_traces WHERE trace_key = ?").run(id);
+    return Number(info.changes) > 0;
   }
 
   async close(): Promise<void> {
