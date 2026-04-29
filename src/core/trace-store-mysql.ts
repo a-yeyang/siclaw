@@ -189,6 +189,22 @@ export class MysqlTraceStore implements TraceStore {
       where.push("outcome = ?");
       params.push(opts.outcome);
     }
+    if (opts.sessionId) {
+      where.push("session_id = ?");
+      params.push(opts.sessionId);
+    }
+    if (opts.mode) {
+      where.push("mode = ?");
+      params.push(opts.mode);
+    }
+    if (typeof opts.isInjectedPrompt === "boolean") {
+      where.push("is_injected_prompt = ?");
+      params.push(opts.isInjectedPrompt ? 1 : 0);
+    }
+    if (opts.dpStatusEnd) {
+      where.push("dp_status_end = ?");
+      params.push(opts.dpStatusEnd);
+    }
     if (typeof opts.cursorStartedAt === "string" && opts.cursorStartedAt && opts.cursorId) {
       where.push("(started_at < ? OR (started_at = ? AND trace_key < ?))");
       params.push(opts.cursorStartedAt, opts.cursorStartedAt, opts.cursorId);
@@ -232,6 +248,16 @@ export class MysqlTraceStore implements TraceStore {
     if (arr.length === 0) return null;
     const r = arr[0];
     return { ...rowToTraceRow(r), bodyJson: r.body_json as string };
+  }
+
+  async deleteById(id: string): Promise<boolean> {
+    await this.ensureSchema();
+    const [result] = await this.pool.execute(
+      "DELETE FROM agent_traces WHERE trace_key = ?",
+      [id],
+    );
+    const affected = (result as { affectedRows?: number }).affectedRows ?? 0;
+    return affected > 0;
   }
 
   async close(): Promise<void> {

@@ -59,6 +59,15 @@ export interface TraceListOpts {
   to?: string;
   minDurationMs?: number;
   outcome?: string;
+  /** Filter by brain session id. */
+  sessionId?: string;
+  /** Filter by run mode (web / tui / local / ...). */
+  mode?: string;
+  /** True → only injected (button-driven) prompts; false → only user-typed. */
+  isInjectedPrompt?: boolean;
+  /** "active" / "idle" — see trace-recorder dpStatusEnd semantics. Historical
+   *  rows may carry pre-refactor values such as "investigating". */
+  dpStatusEnd?: string;
   limit?: number;
   /** Keyset cursor: last row's (startedAt, id). Next page is strictly older. */
   cursorStartedAt?: string;
@@ -89,6 +98,8 @@ export interface TraceStore {
   list(opts: TraceListOpts): Promise<TraceListResult>;
   /** Fetch one trace (with body JSON) by business key. */
   getById(id: string): Promise<TraceRecord | null>;
+  /** Delete one trace by business key. Returns true if a row was removed. */
+  deleteById(id: string): Promise<boolean>;
   /** Release resources (DB connections, file handles). Idempotent. */
   close(): Promise<void>;
 }

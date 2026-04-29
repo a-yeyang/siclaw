@@ -60,6 +60,28 @@ export class CompositeTraceStore implements TraceStore {
     return null;
   }
 
+  /**
+   * Fan-out delete to every backend so a row removed via API does not linger
+   * on a secondary sink. Returns true if any backend acknowledged a removal.
+   */
+  async deleteById(id: string): Promise<boolean> {
+    const results = await Promise.allSettled(
+      this.stores.map(({ store }) => store.deleteById(id)),
+    );
+    let removed = false;
+    results.forEach((r, i) => {
+      if (r.status === "fulfilled") {
+        if (r.value) removed = true;
+      } else {
+        console.warn(
+          `[trace-store-composite] deleteById(${id}) failed on backend "${this.stores[i].name}":`,
+          r.reason,
+        );
+      }
+    });
+    return removed;
+  }
+
   async close(): Promise<void> {
     // Close every backend even if one throws — don't leak connections.
     await Promise.allSettled(this.stores.map(({ store }) => store.close()));
