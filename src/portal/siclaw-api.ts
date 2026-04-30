@@ -40,6 +40,11 @@ import { parseFrontmatter } from "../gateway/skills/builtin-sync.js";
 import { validateSchedule } from "../cron/cron-limits.js";
 import { validateKnowledgePackage } from "../shared/knowledge-package.js";
 import { getTraceStore, type TraceListOpts } from "../core/trace-store.js";
+import {
+  INJECTED_PROMPT_KINDS,
+  isInjectedPromptKind,
+  type InjectedPromptKind,
+} from "../core/injected-prompt-kinds.js";
 
 /** Trace viewer message limit — matches siclaw_main.cron-limits.MAX_TRACE_MESSAGES */
 const MAX_TRACE_MESSAGES = 200;
@@ -1855,8 +1860,28 @@ export function registerSiclawRoutes(router: RestRouter, config: SiclawConfig, c
     if (query.session_id) opts.sessionId = query.session_id;
     if (query.mode) opts.mode = query.mode;
     if (query.dp_status_end) opts.dpStatusEnd = query.dp_status_end;
-    const injected = parseBoolParam(query.is_injected_prompt);
-    if (injected !== undefined) opts.isInjectedPrompt = injected;
+    // `is_injected_prompt` query param accepts:
+    //   - csv list of kind keys (e.g. "chip_click,dig_deeper") → IN filter
+    //   - "1" / "true" / "yes"                                 → any non-"none"
+    //   - "0" / "false" / "no"                                 → ["none"]
+    // See src/core/injected-prompt-kinds.ts for the full kind list.
+    const injectedRaw = (query.is_injected_prompt ?? "").trim();
+    if (injectedRaw) {
+      const asBool = parseBoolParam(injectedRaw);
+      if (asBool === false) {
+        opts.isInjectedPrompt = [INJECTED_PROMPT_KINDS.NONE];
+      } else if (asBool === true) {
+        opts.isInjectedPrompt = (Object.values(INJECTED_PROMPT_KINDS) as InjectedPromptKind[])
+          .filter((k) => k !== INJECTED_PROMPT_KINDS.NONE);
+      } else {
+        const kinds = injectedRaw
+          .split(",")
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0)
+          .filter(isInjectedPromptKind);
+        if (kinds.length > 0) opts.isInjectedPrompt = kinds;
+      }
+    }
     if (query.min_duration_ms) {
       const n = parseInt(query.min_duration_ms, 10);
       if (Number.isFinite(n) && n >= 0) opts.minDurationMs = n;

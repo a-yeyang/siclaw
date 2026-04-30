@@ -15,6 +15,8 @@ import path from "node:path";
 import { onDiagnostic, type DiagnosticEvent } from "../shared/diagnostic-events.js";
 import type { BrainSession, BrainSessionStats, BrainModelInfo } from "./brain-session.js";
 import { getTraceStore, type TraceStore } from "./trace-store.js";
+import { buildTraceSummary, buildTraceEasy } from "./trace-summary.js";
+import { classifyInjectedPrompt, INJECTED_PROMPT_KINDS, type InjectedPromptKind } from "./injected-prompt-kinds.js";
 import type { DpStateRef } from "./types.js";
 
 // ── Types ──────────────────────────────────────────────
@@ -41,94 +43,16 @@ export interface TraceRecorderOpts {
 }
 
 /**
- * Classification rule for `isInjectedPrompt`:
+ * `isInjectedPrompt` is an enum (InjectedPromptKind), NOT a boolean.
+ * See src/core/injected-prompt-kinds.ts for the kind list, matcher registry,
+ * and classification rule. Add new injection types there, not here.
  *
- *   TRUE  — the prompt body carries any system-injected content the user did
- *           not type. This covers two cases:
- *             (a) UI button clicks that prepend a canned `fullPrompt` to the
- *                 message body (Dig deeper, DP checkpoint chips, etc.). Any
- *                 user text the chip allows is treated as supplementary
- *                 context — the click itself is what defined the prompt.
- *             (b) Synthetic system notifications such as the delegation
- *                 batch-complete capsule injected after delegate_to_agents.
- *   FALSE — the prompt is a plain user message. The `[Deep Investigation]`
- *           wrapper is a mode flag (no canned content), so it does NOT
- *           promote a regular question to injected.
- *
- * Matching strategies, in order:
- *   1. EXACT string match — fixed canned bodies (legacy DP_* + Feedback)
- *   2. PREFIX match       — long canned paragraphs and synthetic system
- *                           notifications (dig-deeper text, delegation batch
- *                           complete capsule)
- *   3. REGEX match        — structured templates (investigation feedback
- *                           verdicts)
- *   4. CHIP-MARKER rule   — any current-world DP/Dig-deeper chip click. The
- *                           frontend sends them as `[<label>]\n<fullPrompt>`,
- *                           with optional `\n\nAdditional direction from user:`
- *                           suffix when the user added text. Either form is
- *                           injected because the canned `fullPrompt` is always
- *                           present.
+ * Quick recap of the contract:
+ *   - kind === "none"  → plain user prompt (the `[Deep Investigation]` wrapper
+ *                        is a mode flag, NOT canned content, so it stays "none").
+ *   - any other kind   → the prompt carries machine-generated content the user
+ *                        did not type (UI button click, synthetic system capsule…).
  */
-const CANNED_INJECTED_STRINGS: readonly string[] = [
-  // Legacy pre-refactor markers (HypothesesCard etc., deleted Apr 2026). Kept
-  // so historical sessions replayed for analytics still classify correctly.
-  "[DP_CONFIRM]\nThe user has confirmed hypotheses.",
-  "[DP_SKIP]\nSkip validation and present conclusion.",
-  "[DP_REINVESTIGATE]\nRe-investigate from a different angle.",
-  "[Feedback]",
-];
-
-const CANNED_INJECTED_PREFIXES: readonly string[] = [
-  "Your conclusion may not be the root cause. Please dig deeper",  // dig-deeper button, long canned paragraph
-  // Synthetic notification delivered to the parent session after a
-  // delegate_to_agents batch finishes. Built by
-  // src/agentbox/session.ts buildDelegationBatchNotification(); fed back into
-  // the parent via runSyntheticParentPrompt(). 100% machine-generated.
-  "[Delegation Batch Complete]\n",
-];
-
-const CANNED_INJECTED_PATTERNS: readonly RegExp[] = [
-  // [investigation feedback: (confirmed|corrected|rejected)] investigationId=<id>
-  // with NO trailing user comment — verdict-only click. If the user adds a
-  // comment after the id, the regex deliberately fails to match → false.
-  /^\[investigation feedback: (?:confirmed|corrected|rejected)\] investigationId=\S+$/,
-];
-
-// Current-world DP/Dig-deeper prefix-chip labels. Source of truth:
-// portal-web/src/components/chat/PilotArea.tsx (DIG_DEEPER_CHIP +
-// DP_CHECKPOINT_PREFIX_CHIPS + LEGACY_DP_PREFIX_CHIPS). Sent on the wire as
-// `[<label>]\n<fullPrompt>` by InputArea.handleSend. Any click of these
-// buttons injects a canned fullPrompt into the message, so the prompt is
-// classified as injected regardless of whether the user typed extra context.
-const CHIP_MARKER_LABELS: readonly string[] = [
-  "Dig deeper",
-  "Proceed",
-  "Refine",
-  "Summarize",
-  "Adjust",
-  "Skip",
-];
-// Optional `[Deep Investigation]\n` wrapper added by InputArea when DP toggle
-// is on. Strip it before chip-marker matching so DP+chip combinations classify
-// the same as bare chip clicks.
-const DP_MODE_WRAPPER = "[Deep Investigation]\n";
-
-function isInjectedPromptText(text: string): boolean {
-  if (!text) return false;
-  const trimmed = text.trim();
-  if (CANNED_INJECTED_STRINGS.includes(trimmed)) return true;
-  if (CANNED_INJECTED_PREFIXES.some((p) => trimmed.startsWith(p))) return true;
-  if (CANNED_INJECTED_PATTERNS.some((re) => re.test(trimmed))) return true;
-
-  const afterDpWrapper = trimmed.startsWith(DP_MODE_WRAPPER)
-    ? trimmed.slice(DP_MODE_WRAPPER.length)
-    : trimmed;
-  const chipMatch = afterDpWrapper.match(/^\[([^\]]+)\]\n/);
-  if (chipMatch && CHIP_MARKER_LABELS.includes(chipMatch[1])) return true;
-
-  return false;
-}
-
 /**
  * How a skill was referenced in a single tool call.
  *   - "read"         = agent read the SKILL.md documentation (Path A; the dominant path
@@ -203,9 +127,10 @@ export class TraceRecorder {
   private prevStats: BrainSessionStats | undefined;
   private unsubscribeDiag: (() => void) | null = null;
   private outcome: "completed" | "error" = "completed";
-  /** Computed once at startTrace(): does userMessage start with a UI-button
-   *  injection prefix? Stored alongside the trace for analytics filtering. */
-  private isInjectedPrompt = false;
+  /** Computed once at startTrace(): which (if any) injection class produced
+   *  this prompt. Stored alongside the trace for analytics filtering. Default
+   *  "none" — overwritten by classifyInjectedPrompt() at startTrace(). */
+  private isInjectedPrompt: InjectedPromptKind = INJECTED_PROMPT_KINDS.NONE;
   /** Business id (trace_key) assigned at startTrace() — reused across the
    *  in-flight stub insert and the final flush upsert so they refer to the
    *  same row. Format matches the filename stem: `trace-YYYYMMDD-HH-MM-SS-<user>`. */
@@ -285,7 +210,7 @@ export class TraceRecorder {
     this.active = true;
     this.promptIdx += 1;
     this.userMessage = userMessage;
-    this.isInjectedPrompt = isInjectedPromptText(userMessage);
+    this.isInjectedPrompt = classifyInjectedPrompt(userMessage);
     this.startedAtMs = Date.now();
     this.steps = [];
     this.skillsUsed = [];
@@ -341,7 +266,7 @@ export class TraceRecorder {
       const startedAtStr = formatBeijing(nowMs);
       const model = safeCall(this.opts.getModel);
       const dpStatus = this.opts.dpStateRef?.active ? "active" : "idle";
-      const injected = isInjectedPromptText(text);
+      const injected = classifyInjectedPrompt(text);
       const body = {
         schemaVersion: "1.2",
         kind: "steer",   // distinguishes from "prompt" traces in the body
@@ -586,7 +511,7 @@ export class TraceRecorder {
         this.pendingTools.delete(key);
 
         const result = ev.result as Record<string, unknown> | undefined;
-        const output = Array.isArray(result?.content)
+        let output = Array.isArray(result?.content)
           ? (result!.content as Array<Record<string, unknown>>)
               .filter((c) => c.type === "text")
               .map((c) => (c.text as string | undefined) ?? "")
@@ -594,6 +519,17 @@ export class TraceRecorder {
           : "";
         const details = result?.details as Record<string, unknown> | undefined;
         const isError = Boolean(ev.isError || details?.error || details?.blocked);
+
+        // Empty-output annotation: trace consumers should never see an
+        // ambiguous `output: ""`. If the tool produced no text content, fill
+        // in a tagged reason so the why is preserved alongside the why-not.
+        // Fixed prefixes (`[ok-empty]` / `[error]`) make downstream filtering
+        // unambiguous (`output LIKE '[error]%'`).
+        if (!output) {
+          output = isError
+            ? formatErrorEmpty(result, details, ev)
+            : "[ok-empty] 命令执行成功，但无任何 stdout/stderr 输出";
+        }
 
         const startMs = pending?.startedAtMs ?? now;
         const startedAtStr = formatBeijing(startMs);
@@ -798,6 +734,30 @@ export class TraceRecorder {
       console.warn(`[trace-recorder] write failed: ${fpath}`, err);
     }
 
+    // Build the chronological summary — pure projection of `steps[]`, no LLM.
+    // Best-effort: a malformed step must not break trace persistence.
+    let traceSummary: string | null = null;
+    let traceSummaryJson: string | null = null;
+    let traceEasy: string | null = null;
+    try {
+      const summary = buildTraceSummary({
+        userMessage: this.userMessage,
+        steps: this.steps,
+      });
+      traceSummary = summary.line;
+      traceSummaryJson = JSON.stringify(summary.events);
+    } catch (err) {
+      console.warn("[trace-recorder] buildTraceSummary failed (non-fatal):", err);
+    }
+    try {
+      traceEasy = buildTraceEasy({
+        userMessage: this.userMessage,
+        steps: this.steps,
+      }).line;
+    } catch (err) {
+      console.warn("[trace-recorder] buildTraceEasy failed (non-fatal):", err);
+    }
+
     // Persist to SQLite (same JSON body, plus indexed columns for API queries).
     // UPSERT overwrites the in-flight stub row written by startTrace(). Best-
     // effort: DB failures must not break the trace contract on disk.
@@ -831,6 +791,9 @@ export class TraceRecorder {
           bodyJson,
           isInjectedPrompt: this.isInjectedPrompt,
           dpStatusEnd,
+          traceSummary,
+          traceSummaryJson,
+          traceEasy,
         });
       } catch (err) {
         console.warn(`[trace-recorder] DB insert failed:`, err);
@@ -875,6 +838,52 @@ function formatBeijingFilename(ms: number): string {
 
 function pendingKey(name: string, toolCallId: string | undefined): string {
   return toolCallId ? `${name}#${toolCallId}` : name;
+}
+
+/**
+ * Synthesize a tagged reason string when an errored tool call produced no
+ * text output. Always returns a non-empty `[error] …` line so trace consumers
+ * can filter ambiguous empty outputs by prefix.
+ *
+ * Priority order is intentional: `blocked` (security policy) is most specific,
+ * `details.reason` is an explicit author-supplied tag, then exitCode/errorMessage,
+ * then result-shape diagnostics, then a final fallback.
+ */
+function formatErrorEmpty(
+  result: Record<string, unknown> | undefined,
+  details: Record<string, unknown> | undefined,
+  ev: Record<string, unknown>,
+): string {
+  if (details?.blocked) {
+    const reason = (details.reason as string | undefined) ?? "n/a";
+    return `[error] 命令被安全策略拦截 reason=${reason}`;
+  }
+  if (details?.error && details.reason) {
+    const exit = details.exitCode === undefined ? "n/a" : String(details.exitCode);
+    return `[error] ${String(details.reason)} exitCode=${exit}`;
+  }
+  if (details?.exitCode !== undefined) {
+    return `[error] 命令异常退出 exitCode=${String(details.exitCode)}`;
+  }
+  const errMsg = (ev.errorMessage as string | undefined) ?? (ev.error as string | undefined);
+  if (typeof errMsg === "string" && errMsg) {
+    return `[error] ${errMsg}`;
+  }
+  if (!result || typeof result !== "object") {
+    return "[error] 工具未返回 result 对象";
+  }
+  if (!Array.isArray(result.content)) {
+    return "[error] 工具未返回 content（result.content 非数组）";
+  }
+  const arr = result.content as Array<Record<string, unknown>>;
+  if (arr.length === 0) {
+    return "[error] 工具未返回 content（content 数组为空）";
+  }
+  const types = arr.map((c) => String(c.type ?? "?")).join(",");
+  if (!arr.some((c) => c.type === "text")) {
+    return `[error] content 仅含非文本类型: ${types}`;
+  }
+  return "[error] 工具标记错误但未提供原因";
 }
 
 /**

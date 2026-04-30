@@ -21,10 +21,15 @@ import type {
   TraceListResult,
   TraceRecord,
 } from "./trace-store-types.js";
+import { coerceInjectedPromptKind } from "./injected-prompt-kinds.js";
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 7;
 
-const DDL_V4_TABLE = `
+// v6 changed `is_injected_prompt` from TINYINT (0/1) to VARCHAR enum.
+// See src/core/injected-prompt-kinds.ts for the kind list. Legacy `1` rows
+// are migrated to `'unknown_legacy'` (the original kind cannot be recovered
+// from the row alone — backfill from user_message is a separate script).
+const DDL_V6_TABLE = `
   CREATE TABLE IF NOT EXISTS agent_traces (
     id                  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     trace_key           VARCHAR(255) NOT NULL,
@@ -48,13 +53,17 @@ const DDL_V4_TABLE = `
     body_json           LONGTEXT NOT NULL,
     body_bytes          INT NOT NULL,
     created_at          VARCHAR(32) NOT NULL,
-    is_injected_prompt  TINYINT NOT NULL DEFAULT 0,
+    is_injected_prompt  VARCHAR(64) NOT NULL DEFAULT 'none',
     dp_status_end       VARCHAR(64) NOT NULL DEFAULT 'idle',
+    trace_summary       MEDIUMTEXT,
+    trace_summary_json  MEDIUMTEXT,
+    trace_easy          MEDIUMTEXT,
     PRIMARY KEY (id),
     UNIQUE KEY uk_trace_key (trace_key),
     KEY idx_traces_user_time (user_id, started_at),
     KEY idx_traces_time      (started_at),
-    KEY idx_traces_session   (session_id, prompt_idx)
+    KEY idx_traces_session   (session_id, prompt_idx),
+    KEY idx_traces_injected  (is_injected_prompt)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 `;
 
@@ -70,10 +79,12 @@ const INSERT_COLS = `
   user_message, outcome, started_at, ended_at, duration_ms,
   step_count, tool_call_count, tokens_total, cost_usd,
   schema_version, body_json, body_bytes,
-  is_injected_prompt, dp_status_end, created_at
+  is_injected_prompt, dp_status_end, created_at,
+  trace_summary, trace_summary_json,
+  trace_easy
 `;
 
-const INSERT_PLACEHOLDERS = `?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?`;
+const INSERT_PLACEHOLDERS = `?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?`;
 
 const UPDATE_ON_DUP = `
   session_id         = VALUES(session_id),
@@ -96,7 +107,10 @@ const UPDATE_ON_DUP = `
   body_json          = VALUES(body_json),
   body_bytes         = VALUES(body_bytes),
   is_injected_prompt = VALUES(is_injected_prompt),
-  dp_status_end      = VALUES(dp_status_end)
+  dp_status_end      = VALUES(dp_status_end),
+  trace_summary      = VALUES(trace_summary),
+  trace_summary_json = VALUES(trace_summary_json),
+  trace_easy         = VALUES(trace_easy)
 `;
 
 // ── Implementation ──────────────────────────────────────────────────────────
@@ -128,10 +142,48 @@ export class MysqlTraceStore implements TraceStore {
     const conn = await this.pool.getConnection();
     try {
       await conn.query(DDL_SCHEMA_MIGRATIONS);
-      await conn.query(DDL_V4_TABLE);
-      // Record the version. Not used for branching yet — CREATE TABLE IF NOT
-      // EXISTS already handles idempotency — but pins the expected version for
-      // future additive migrations (v4 → v5).
+      await conn.query(DDL_V6_TABLE);
+      // Additive migrations on a pre-existing table (CREATE TABLE IF NOT
+      // EXISTS does NOT add or modify columns).
+      const [colRows] = await conn.query(
+        `SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'agent_traces'`,
+      );
+      const colInfo = colRows as Array<{ COLUMN_NAME: string; DATA_TYPE: string }>;
+      const colMap = new Map(colInfo.map((r) => [r.COLUMN_NAME, r.DATA_TYPE.toLowerCase()]));
+
+      if (!colMap.has("trace_summary")) {
+        await conn.query(`ALTER TABLE agent_traces ADD COLUMN trace_summary MEDIUMTEXT`);
+      }
+      if (!colMap.has("trace_summary_json")) {
+        await conn.query(`ALTER TABLE agent_traces ADD COLUMN trace_summary_json MEDIUMTEXT`);
+      }
+      if (!colMap.has("trace_easy")) {
+        await conn.query(`ALTER TABLE agent_traces ADD COLUMN trace_easy MEDIUMTEXT`);
+      }
+
+      // v5 → v6: is_injected_prompt TINYINT (0/1) → VARCHAR(64) enum.
+      // Run only when the live column type is still numeric. The two-step
+      // dance (translate values → MODIFY column) is needed because MODIFY
+      // alone would coerce 0 → '0' and 1 → '1', losing the meaning.
+      const injectedType = colMap.get("is_injected_prompt") ?? "";
+      if (injectedType && (injectedType === "tinyint" || injectedType.startsWith("int"))) {
+        await conn.query(`ALTER TABLE agent_traces ADD COLUMN is_injected_prompt_new VARCHAR(64) NOT NULL DEFAULT 'none'`);
+        await conn.query(`UPDATE agent_traces SET is_injected_prompt_new = CASE WHEN is_injected_prompt = 1 THEN 'unknown_legacy' ELSE 'none' END`);
+        await conn.query(`ALTER TABLE agent_traces DROP COLUMN is_injected_prompt`);
+        await conn.query(`ALTER TABLE agent_traces CHANGE COLUMN is_injected_prompt_new is_injected_prompt VARCHAR(64) NOT NULL DEFAULT 'none'`);
+      }
+
+      // Idempotent: secondary index on is_injected_prompt (added in v6).
+      // INFORMATION_SCHEMA.STATISTICS exposes existing indexes; skip if present.
+      const [idxRows] = await conn.query(
+        `SELECT INDEX_NAME FROM INFORMATION_SCHEMA.STATISTICS
+          WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'agent_traces' AND INDEX_NAME = 'idx_traces_injected'`,
+      );
+      if ((idxRows as unknown[]).length === 0) {
+        await conn.query(`ALTER TABLE agent_traces ADD INDEX idx_traces_injected (is_injected_prompt)`);
+      }
+
       await conn.query(
         `INSERT INTO agent_traces_meta (meta_key, meta_value) VALUES ('schema_version', ?)
          ON DUPLICATE KEY UPDATE meta_value = VALUES(meta_value)`,
@@ -197,9 +249,14 @@ export class MysqlTraceStore implements TraceStore {
       where.push("mode = ?");
       params.push(opts.mode);
     }
-    if (typeof opts.isInjectedPrompt === "boolean") {
-      where.push("is_injected_prompt = ?");
-      params.push(opts.isInjectedPrompt ? 1 : 0);
+    if (opts.isInjectedPrompt !== undefined) {
+      const kinds = Array.isArray(opts.isInjectedPrompt)
+        ? opts.isInjectedPrompt
+        : [opts.isInjectedPrompt];
+      if (kinds.length > 0) {
+        where.push(`is_injected_prompt IN (${kinds.map(() => "?").join(", ")})`);
+        for (const k of kinds) params.push(k);
+      }
     }
     if (opts.dpStatusEnd) {
       where.push("dp_status_end = ?");
@@ -220,7 +277,7 @@ export class MysqlTraceStore implements TraceStore {
       SELECT trace_key AS id, session_id, prompt_idx, user_id, username, mode, brain_type, model_name,
              user_message, outcome, started_at, ended_at, duration_ms,
              step_count, tool_call_count, tokens_total, cost_usd, schema_version, created_at,
-             is_injected_prompt, dp_status_end
+             is_injected_prompt, dp_status_end, trace_summary, trace_summary_json, trace_easy
         FROM agent_traces
         ${whereSql}
        ORDER BY started_at DESC, trace_key DESC
@@ -240,7 +297,8 @@ export class MysqlTraceStore implements TraceStore {
       `SELECT trace_key AS id, session_id, prompt_idx, user_id, username, mode, brain_type, model_name,
               user_message, outcome, started_at, ended_at, duration_ms,
               step_count, tool_call_count, tokens_total, cost_usd, schema_version,
-              created_at, is_injected_prompt, dp_status_end, body_json
+              created_at, is_injected_prompt, dp_status_end,
+              trace_summary, trace_summary_json, trace_easy, body_json
          FROM agent_traces WHERE trace_key = ? LIMIT 1`,
       [id],
     );
@@ -287,11 +345,14 @@ export class MysqlTraceStore implements TraceStore {
       row.schemaVersion,
       row.bodyJson,
       Buffer.byteLength(row.bodyJson, "utf8"),
-      row.isInjectedPrompt ? 1 : 0,
+      row.isInjectedPrompt,
       row.dpStatusEnd,
       // created_at — MySQL has no cheap Beijing-time default; fill from
       // application clock. Matches the strftime default used by SQLite.
       formatBeijingNow(),
+      row.traceSummary ?? null,
+      row.traceSummaryJson ?? null,
+      row.traceEasy ?? null,
     ];
   }
 }
@@ -321,8 +382,11 @@ function rowToTraceRow(r: Record<string, unknown>): TraceRow {
     costUsd: r.cost_usd != null ? Number(r.cost_usd) : null,
     schemaVersion: r.schema_version as string,
     createdAt: r.created_at as string,
-    isInjectedPrompt: Number(r.is_injected_prompt) === 1,
+    isInjectedPrompt: coerceInjectedPromptKind(r.is_injected_prompt),
     dpStatusEnd: (r.dp_status_end as string | null) ?? "idle",
+    traceSummary: (r.trace_summary as string | null) ?? null,
+    traceSummaryJson: (r.trace_summary_json as string | null) ?? null,
+    traceEasy: (r.trace_easy as string | null) ?? null,
   };
 }
 

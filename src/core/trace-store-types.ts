@@ -12,6 +12,8 @@
  * would be lost when the pod restarts) by swapping in a remote store.
  */
 
+import type { InjectedPromptKind } from "./injected-prompt-kinds.js";
+
 export interface TraceRow {
   /** Business id (human-readable, globally unique, matches trace-*.json filename stem). */
   id: string;
@@ -40,14 +42,25 @@ export interface TraceRow {
   schemaVersion: string;
   /** Beijing time string. Set by DB DEFAULT on insert, populated on read. */
   createdAt?: string;
-  /** True when userMessage is a UI-button-generated canned string (DP_CONFIRM
-   *  full body, dig-deeper, etc.). See trace-recorder's INJECTED_PROMPT
-   *  classification. */
-  isInjectedPrompt: boolean;
+  /** Classification of how the userMessage was generated. "none" = plain
+   *  user typing; any other value = a specific UI-button / synthetic-capsule
+   *  injection. See src/core/injected-prompt-kinds.ts for the full enum. */
+  isInjectedPrompt: InjectedPromptKind;
   /** DP (Deep Probe) workflow status at the moment the trace was persisted.
    *  One of: idle / investigating / awaiting_confirmation / validating /
    *  concluding / completed. */
   dpStatusEnd: string;
+  /** Compact, human-readable chronological summary of the trace — strict
+   *  projection of the steps array, no LLM involvement. See trace-summary.ts. */
+  traceSummary?: string | null;
+  /** Structured form of the same summary (JSON-serialised SummaryEvent[]),
+   *  optimised for programmatic consumption by the analytics team. */
+  traceSummaryJson?: string | null;
+  /** Ultra-thin sibling of `traceSummary`: only user input, AI text, tool
+   *  name + tool output content. Drops every other piece of tool metadata
+   *  (input args, skill scope, isError, lifecycle events). See
+   *  src/core/trace-summary.ts buildTraceEasy(). */
+  traceEasy?: string | null;
 }
 
 export interface TraceListOpts {
@@ -63,8 +76,14 @@ export interface TraceListOpts {
   sessionId?: string;
   /** Filter by run mode (web / tui / local / ...). */
   mode?: string;
-  /** True → only injected (button-driven) prompts; false → only user-typed. */
-  isInjectedPrompt?: boolean;
+  /** Filter by injection classification.
+   *   - undefined           → no filter
+   *   - single kind         → exact match
+   *   - array of kinds      → IN (...) match
+   *  To replicate the legacy boolean filter:
+   *    "any injected"     → pass every kind except "none"
+   *    "only user-typed"  → pass ["none"] */
+  isInjectedPrompt?: InjectedPromptKind | InjectedPromptKind[];
   /** "active" / "idle" — see trace-recorder dpStatusEnd semantics. Historical
    *  rows may carry pre-refactor values such as "investigating". */
   dpStatusEnd?: string;
