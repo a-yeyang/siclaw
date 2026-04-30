@@ -119,7 +119,8 @@ describe("TraceRecorder", () => {
     expect(t.stats.tokensDelta).toBeDefined();
     // schemaVersion 1.2 since isInjectedPrompt + dpStatusEnd were added.
     expect(t.schemaVersion).toBe("1.2");
-    expect(typeof t.isInjectedPrompt).toBe("boolean");
+    expect(typeof t.isInjectedPrompt).toBe("string");
+    expect(t.isInjectedPrompt).toBe("none");
     expect(t.dpStatusEnd).toBe("idle");
     // Redundant fields removed.
     expect(t.traceId).toBeUndefined();
@@ -306,6 +307,94 @@ describe("TraceRecorder", () => {
     expect(t.outcome).toBe("error");
   });
 
+  describe("empty-output annotation", () => {
+    function runOneToolCall(emit: (e: unknown) => void, result: unknown, isError: boolean): void {
+      emit({ type: "agent_start" });
+      emit({
+        type: "tool_execution_start",
+        toolName: "restricted_bash",
+        toolCallId: "tc1",
+        args: { command: "kubectl get pods" },
+      });
+      emit({
+        type: "tool_execution_end",
+        toolName: "restricted_bash",
+        toolCallId: "tc1",
+        result,
+        isError,
+      });
+      emit({ type: "agent_end" });
+    }
+
+    function attachAndEmit(): { emit: (e: unknown) => void } {
+      const listeners: Array<(e: unknown) => void> = [];
+      const fakeBrain = {
+        brainType: "pi-agent" as const,
+        subscribe(fn: (e: unknown) => void) { listeners.push(fn); return () => {}; },
+      } as any;
+      const rec = makeRecorder();
+      rec.attach(fakeBrain);
+      return { emit: (e: unknown) => listeners.forEach((fn) => fn(e)) };
+    }
+
+    it("annotates ok-empty when tool succeeds with no text output", () => {
+      const { emit } = attachAndEmit();
+      runOneToolCall(emit, { content: [{ type: "text", text: "" }], details: { exitCode: 0 } }, false);
+      const tc = (readTraces()[0] as any).steps.find((s: any) => s.kind === "tool_call");
+      expect(tc.output).toBe("[ok-empty] 命令执行成功，但无任何 stdout/stderr 输出");
+      expect(tc.isError).toBe(false);
+    });
+
+    it("annotates error with details.reason when present", () => {
+      const { emit } = attachAndEmit();
+      runOneToolCall(
+        emit,
+        { content: [], details: { error: true, reason: "kubeconfig_ensure_failed" } },
+        true,
+      );
+      const tc = (readTraces()[0] as any).steps.find((s: any) => s.kind === "tool_call");
+      expect(tc.output).toBe("[error] kubeconfig_ensure_failed exitCode=n/a");
+      expect(tc.isError).toBe(true);
+    });
+
+    it("annotates blocked when details.blocked=true", () => {
+      const { emit } = attachAndEmit();
+      runOneToolCall(
+        emit,
+        { content: [{ type: "text", text: "" }], details: { blocked: true, reason: "command not in whitelist" } },
+        false, // ev.isError can be false; details.blocked still flips isError true
+      );
+      const tc = (readTraces()[0] as any).steps.find((s: any) => s.kind === "tool_call");
+      expect(tc.output).toBe("[error] 命令被安全策略拦截 reason=command not in whitelist");
+      expect(tc.isError).toBe(true);
+    });
+
+    it("annotates exitCode when only exitCode is available", () => {
+      const { emit } = attachAndEmit();
+      runOneToolCall(
+        emit,
+        { content: [{ type: "text", text: "" }], details: { error: true, exitCode: 1 } },
+        true,
+      );
+      const tc = (readTraces()[0] as any).steps.find((s: any) => s.kind === "tool_call");
+      expect(tc.output).toBe("[error] 命令异常退出 exitCode=1");
+    });
+
+    it("does NOT rewrite output when text content is non-empty", () => {
+      const { emit } = attachAndEmit();
+      runOneToolCall(emit, { content: [{ type: "text", text: "pod1 Running" }] }, false);
+      const tc = (readTraces()[0] as any).steps.find((s: any) => s.kind === "tool_call");
+      expect(tc.output).toBe("pod1 Running");
+    });
+
+    it("falls back to a generic error message when no signal is available", () => {
+      const { emit } = attachAndEmit();
+      runOneToolCall(emit, { content: [], details: { error: true } }, true);
+      const tc = (readTraces()[0] as any).steps.find((s: any) => s.kind === "tool_call");
+      expect(tc.output).toBe("[error] 工具未返回 content（content 数组为空）");
+    });
+  });
+
   it("writes filename as trace-<date>-<time>-<user>.json", () => {
     const rec = makeRecorder("sess-abc");
     const listeners: Array<(e: unknown) => void> = [];
@@ -482,36 +571,45 @@ describe("TraceRecorder", () => {
   });
 
   // ── isInjectedPrompt classification ─────────────────────
-  // Rule: injected = TRUE only when the prompt body is 100% machine-generated
-  // by a UI button click. If the user typed any of the content (even with a
-  // marker prefix like "[Deep Investigation]\n..."), it's NOT injected.
+  // The field is now an InjectedPromptKind enum. "none" = plain user typing
+  // (incl. the [Deep Investigation] mode wrapper). Any other key = a specific
+  // canned-content injection. See src/core/injected-prompt-kinds.ts.
   describe("isInjectedPrompt classification", () => {
-    async function flushAndRead(userMessage: string): Promise<boolean> {
+    async function flushAndRead(userMessage: string): Promise<string> {
       const rec = makeRecorder(`sess-inj-${Math.random().toString(36).slice(2, 8)}`);
       await rec.beginPrompt(userMessage);
       await rec.endPrompt("completed");
       await rec.close();
       const files = fs.readdirSync(tmpDir).filter((f) => f.startsWith("trace-"));
       const body = JSON.parse(fs.readFileSync(path.join(tmpDir, files[files.length - 1]), "utf-8"));
-      return body.isInjectedPrompt as boolean;
+      return body.isInjectedPrompt as string;
     }
 
-    // ── should be TRUE (pure canned button clicks) ───────
+    // ── canned button clicks → specific kind ─────────────
     it.each([
-      ["[DP_CONFIRM]\nThe user has confirmed hypotheses.",              "DP_CONFIRM button"],
-      ["[DP_SKIP]\nSkip validation and present conclusion.",            "DP_SKIP button"],
-      ["[DP_REINVESTIGATE]\nRe-investigate from a different angle.",    "DP_REINVESTIGATE default (blank hint)"],
-      ["[Feedback]",                                                     "Feedback button"],
-      ["[investigation feedback: confirmed] investigationId=inv-abc",    "verdict-only, no comment"],
-      ["[investigation feedback: corrected] investigationId=inv-abc",    "corrected verdict, no comment"],
-      ["[investigation feedback: rejected] investigationId=inv-abc",     "rejected verdict, no comment"],
+      ["[DP_CONFIRM]\nThe user has confirmed hypotheses.",              "dp_confirm_legacy"],
+      ["[DP_SKIP]\nSkip validation and present conclusion.",            "dp_skip_legacy"],
+      ["[DP_REINVESTIGATE]\nRe-investigate from a different angle.",    "dp_reinvestigate_legacy"],
+      ["[Feedback]",                                                     "feedback"],
+      ["[investigation feedback: confirmed] investigationId=inv-abc",    "investigation_feedback_verdict"],
+      ["[investigation feedback: corrected] investigationId=inv-abc",    "investigation_feedback_verdict"],
+      ["[investigation feedback: rejected] investigationId=inv-abc",     "investigation_feedback_verdict"],
       ["Your conclusion may not be the root cause. Please dig deeper — trace where the problematic values, configurations, or states come from.",
-                                                                         "dig-deeper button"],
-    ])("classifies %j (%s) as injected", async (msg) => {
-      expect(await flushAndRead(msg)).toBe(true);
+                                                                         "dig_deeper"],
+      ["[Proceed]\nGo ahead with the next investigation step.",          "chip_proceed"],
+      ["[Refine]\nplease refine the hypotheses.",                         "chip_refine"],
+      ["[Summarize]\nsummarize and conclude.",                            "chip_summarize"],
+      ["[Adjust]\nadjust priorities.",                                    "chip_adjust"],
+      ["[Skip]\nskip validation.",                                        "chip_skip"],
+      ["[Dig deeper]\ngo deeper into the chain.",                         "chip_dig_deeper"],
+      ["[Deep Investigation]\n[Refine]\nPlease refine the hypotheses.",  "chip_refine"],
+      ["[Deep Investigation]\n[Dig deeper]\nplease.",                    "chip_dig_deeper"],
+      ["[Delegation Batch Complete]\nall children finished",             "delegation_batch_complete"],
+    ])("classifies %j as %s", async (msg, kind) => {
+      expect(await flushAndRead(msg)).toBe(kind);
     });
 
-    // ── should be FALSE (user-typed content, even with marker prefix) ──
+    // ── user-typed content → "none" (even with marker prefix) ──
     it.each([
       ["[Deep Investigation]\n当前集群有没有网络超时问题？",               "Deep Investigation toggle + user question"],
       ["[DP_ADJUST]\n把第 2 个假设权重调低一点",                           "DP_ADJUST with user adjustment"],
@@ -522,8 +620,8 @@ describe("TraceRecorder", () => {
                                                                          "rejected verdict + user comment"],
       ["帮我查一下 nginx pod 为什么 crash",                                "plain user prompt"],
       ["",                                                                "empty string"],
-    ])("classifies %j (%s) as NOT injected", async (msg) => {
-      expect(await flushAndRead(msg)).toBe(false);
+    ])("classifies %j (%s) as none", async (msg) => {
+      expect(await flushAndRead(msg)).toBe("none");
     });
   });
 });

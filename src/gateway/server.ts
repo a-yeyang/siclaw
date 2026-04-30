@@ -632,10 +632,6 @@ export async function startRuntime(opts: StartRuntimeOptions): Promise<RuntimeSe
       return;
     }
 
-    // Siclaw REST API routes
-    if (restRouter.handle(req, res)) return;
-
-
     // Everything else → 404
     // Siclaw CRUD routes live in Portal; Runtime only exposes health, WS,
     // and internal mTLS endpoints above.
