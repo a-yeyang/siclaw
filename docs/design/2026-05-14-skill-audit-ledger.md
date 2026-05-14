@@ -34,7 +34,7 @@ This branch includes three related pieces:
 3. Research / planning material
    - `docs/research/2026-05-14-infra-intelligence-skill-audit-direction.md`
    - `docs/research/infra-intelligence-skill-audit-direction.pptx`
-   - These connect the implementation direction to SkillRL, SkillRouter, MemPalace, Hermes Agent, RTK, and the Infra intelligence interest-group roadmap.
+   - These connect the implementation direction to SkillRL, SkillRouter, SkillFlow, MemPalace, Hermes Agent, RTK, and the Infra intelligence interest-group roadmap.
 
 ## Key Files
 
@@ -152,6 +152,7 @@ Suggested research follow-ups:
 - Use successful and failed audit traces to propose skill updates.
 - Replay historical cases before accepting generated skill changes.
 - Compare rule-based routing, LLM-judge routing, and SkillRouter-style routing.
+- Use SkillFlow-style lifelong evaluation to separate skill usage from skill utility.
 - Treat audit trace as source material for an SRE LLM Wiki / operations knowledge graph.
 
 ## Safety Notes
@@ -162,4 +163,3 @@ Skill audit data can include user prompts, cluster identifiers, tool names, and 
 - redact sensitive prompt previews when needed;
 - keep generated skill updates behind human review;
 - do not let auto-generated skills bypass command safety gates.
-
