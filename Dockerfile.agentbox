@@ -67,6 +67,7 @@ RUN npm ci --omit=dev
 
 # Copy compiled JS + skills + entrypoint (knowledge synced at runtime via bundle API)
 COPY --from=builder /app/dist/ ./dist/
+COPY scripts/skill-audit-summary.mjs ./scripts/skill-audit-summary.mjs
 COPY skills/core/ ./skills/core/
 COPY skills/extension/ ./skills/extension/
 COPY skills/platform/ ./skills/platform/

@@ -20,6 +20,7 @@ import { HttpTransport } from "./credential-transport.js";
 import { getSyncHandler, createClusterHandler, createHostHandler } from "./sync-handlers.js";
 import { GATEWAY_SYNC_DESCRIPTORS, type AgentBoxSyncHandler, type GatewaySyncType } from "../shared/gateway-sync.js";
 import { detectLanguage } from "../shared/detect-language.js";
+import { readSkillAuditEvents, summarizeSkillAuditEvents } from "../shared/skill-audit-ledger.js";
 
 type RequestHandler = (
   req: http.IncomingMessage,
@@ -283,6 +284,18 @@ export function createHttpServer(
   });
 
   /**
+   * GET /api/sessions/:sessionId/skill-audit - inspect skill/tool audit trail
+   */
+  addRoute("GET", "/api/sessions/:sessionId/skill-audit", async (_req, res, params) => {
+    const events = readSkillAuditEvents(params.sessionId);
+    sendJson(res, 200, {
+      sessionId: params.sessionId,
+      summary: summarizeSkillAuditEvents(events),
+      events,
+    });
+  });
+
+  /**
    * POST /api/prompt - send a message
    *
    * Body: { sessionId?: string, text: string }
@@ -451,6 +464,14 @@ export function createHttpServer(
 
     // Execute prompt asynchronously; notify SSE to close on completion
     console.log(`[agentbox-http] Starting prompt for session ${managed.id} [lang=${detectedLang}]`);
+    emitDiagnostic({
+      type: "prompt_started",
+      sessionId: managed.id,
+      promptPreview: body.text,
+      promptChars: body.text.length,
+      userId: sessionManager.userId,
+      agentId: sessionManager.agentId ?? null,
+    });
 
     // Metrics: snapshot stats before prompt for delta calculation
     const prevStats = managed.brain.getSessionStats();

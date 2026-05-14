@@ -11,6 +11,7 @@ import { parseArgs, shellEscape } from "../infra/command-sets.js";
 import { validatePodName, prepareExecEnv, spawnAsync, stdinExecCmd } from "../infra/exec-utils.js";
 import { resolveRequiredKubeconfig } from "../infra/kubeconfig-resolver.js";
 import { ensureClusterForTool } from "../infra/ensure-kubeconfigs.js";
+import { emitDiagnostic } from "../../shared/diagnostic-events.js";
 
 interface PodScriptParams {
   pod: string;
@@ -23,7 +24,12 @@ interface PodScriptParams {
   timeout_seconds?: number;
 }
 
-export function createPodScriptTool(kubeconfigRef?: KubeconfigRef): ToolDefinition {
+export function createPodScriptTool(
+  kubeconfigRef?: KubeconfigRef,
+  sessionIdRef?: { current: string },
+  userId?: string,
+  agentId?: string | null,
+): ToolDefinition {
   return {
     name: "pod_script",
     label: "Pod Script",
@@ -161,13 +167,40 @@ Examples:
       const execCmd = stdinExecCmd(resolved.interpreter, escapedArgs || undefined);
       kubectlArgs.push("--", "sh", "-c", execCmd);
 
+      const startMs = Date.now();
       try {
         const result = await spawnAsync("kubectl", kubectlArgs, timeout, env.childEnv, signal, resolved.content);
+        if (params.skill) {
+          emitDiagnostic({
+            type: "skill_call",
+            skillName: params.skill,
+            scriptName: params.script,
+            scope: resolved.scope,
+            outcome: "success",
+            durationMs: Date.now() - startMs,
+            sessionId: sessionIdRef?.current,
+            userId: userId ?? "unknown",
+            agentId: agentId ?? null,
+          });
+        }
         return {
           content: [{ type: "text", text: postExecSecurity(result.stdout.trim(), null, { stderr: result.stderr.trim() || undefined }) }],
           details: { exitCode: 0 },
         };
       } catch (err: any) {
+        if (params.skill) {
+          emitDiagnostic({
+            type: "skill_call",
+            skillName: params.skill,
+            scriptName: params.script,
+            scope: resolved.scope,
+            outcome: "error",
+            durationMs: Date.now() - startMs,
+            sessionId: sessionIdRef?.current,
+            userId: userId ?? "unknown",
+            agentId: agentId ?? null,
+          });
+        }
         const stdout = err.stdout?.trim() ?? "";
         const stderr = err.stderr?.trim() ?? err.message;
         return {
@@ -181,5 +214,5 @@ Examples:
 
 export const registration: ToolEntry = {
   category: "script-exec",
-  create: (refs) => createPodScriptTool(refs.kubeconfigRef),
+  create: (refs) => createPodScriptTool(refs.kubeconfigRef, refs.sessionIdRef, refs.userId, refs.agentId),
 };

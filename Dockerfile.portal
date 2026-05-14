@@ -38,6 +38,7 @@ RUN npm ci --omit=dev
 
 # Backend JS
 COPY --from=backend-builder /app/dist/ ./dist/
+COPY scripts/skill-audit-summary.mjs ./scripts/skill-audit-summary.mjs
 
 # Frontend static files → served by Portal server
 COPY --from=frontend-builder /app/portal-web/dist/ ./portal-web/dist/

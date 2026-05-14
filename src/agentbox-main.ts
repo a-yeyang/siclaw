@@ -20,6 +20,9 @@ import { debugPodGC, debugPodCache } from "./tools/infra/debug-pod.js";
 // but ESM guarantees single module evaluation — the subscriber registers only once.
 import "./shared/metrics.js";
 import "./shared/local-collector.js"; // side-effect: register monitoring collector
+import { startSkillAuditLedger } from "./shared/skill-audit-ledger.js";
+
+startSkillAuditLedger();
 
 const config = loadConfig();
 const PORT = config.server.port;

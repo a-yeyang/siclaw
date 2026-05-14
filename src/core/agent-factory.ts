@@ -36,6 +36,8 @@ import type { BrainSession } from "./brain-session.js";
 import { McpClientManager } from "./mcp-client.js";
 import { loadConfig, getEmbeddingConfig, getConfigPath, getDefaultLlm } from "./config.js";
 import { createGuardRegistry, installGuardPipeline } from "./guard-pipeline.js";
+import { emitDiagnostic, type SkillAuditScope } from "../shared/diagnostic-events.js";
+import { detectSkillReadTarget } from "../shared/skill-audit-ledger.js";
 
 import type { SessionMode, KubeconfigRef, MemoryRef, DpStateRef, MutableDpStateRef } from "./types.js";
 
@@ -133,6 +135,8 @@ export interface SiclawSessionResult {
   dpStateRef?: DpStateRef;
   /** Mutable ref — populated when session ID is assigned (for skill_call events) */
   sessionIdRef: { current: string };
+  /** Skills loaded into this session, used by AgentBox to emit session-scoped audit events. */
+  skillAuditEntries: Array<{ name: string; scope: SkillAuditScope; filePath?: string }>;
 
 }
 
@@ -163,6 +167,16 @@ function truncateWithBudget(content: string, maxChars: number): string {
     marker +
     content.slice(-tailSize)
   );
+}
+
+function inferSkillAuditScope(filePath?: string): SkillAuditScope {
+  if (!filePath) return "unknown";
+  const parts = path.resolve(filePath).split(path.sep);
+  const parent = parts.at(-3);
+  if (parent === "core" || parent === "extension") return "builtin";
+  if (parent === "platform") return "platform";
+  if (parent === "resolved" || parent === "global" || parent === "user" || parent === "skillset") return "global";
+  return "unknown";
 }
 
 /**
@@ -418,7 +432,23 @@ export async function createSiclawSession(
   const restrictedFileTools = [
     createReadTool(cwd, {
       operations: {
-        readFile: async (p) => { assertPathAllowed(p, readAllowedDirs, "read"); return fsReadFile(p); },
+        readFile: async (p) => {
+          assertPathAllowed(p, readAllowedDirs, "read");
+          const content = await fsReadFile(p);
+          const skill = detectSkillReadTarget(p);
+          if (skill && sessionIdRef.current) {
+            emitDiagnostic({
+              type: "skill_read",
+              sessionId: sessionIdRef.current,
+              skillName: skill.skillName,
+              scope: skill.scope,
+              filePath: path.resolve(p),
+              userId,
+              agentId,
+            });
+          }
+          return content;
+        },
         access: async (p) => { assertPathAllowed(p, readAllowedDirs, "read"); return fsAccess(p, fs.constants.R_OK); },
       },
     }),
@@ -584,6 +614,11 @@ export async function createSiclawSession(
   if (skillDiagnostics.length > 0) {
     console.log(`[agent-factory] Skill diagnostics: ${JSON.stringify(skillDiagnostics)}`);
   }
+  const skillAuditEntries = loadedSkills.map((skill) => ({
+    name: skill.name,
+    scope: inferSkillAuditScope(skill.filePath),
+    ...(skill.filePath ? { filePath: skill.filePath } : {}),
+  }));
 
   const sessionManager =
     opts?.sessionManager ?? SessionManager.create(process.cwd());
@@ -622,5 +657,18 @@ export async function createSiclawSession(
   installGuardPipeline(guardRegistry, { agent: session.agent, sessionManager });
 
   const brain: BrainSession = new PiAgentBrain(session);
-  return { brain, session, modelFallbackMessage, customTools, kubeconfigRef, skillsDirs, mode, mcpManager, memoryIndexer, sessionIdRef, dpStateRef };
+  return {
+    brain,
+    session,
+    modelFallbackMessage,
+    customTools,
+    kubeconfigRef,
+    skillsDirs,
+    mode,
+    mcpManager,
+    memoryIndexer,
+    sessionIdRef,
+    dpStateRef,
+    skillAuditEntries,
+  };
 }

@@ -1525,6 +1525,17 @@ Always end with a final report even if evidence is incomplete.`;
 
     // Populate sessionIdRef so skill_call events can associate with this session
     result.sessionIdRef.current = id;
+    for (const skill of result.skillAuditEntries) {
+      emitDiagnostic({
+        type: "skill_available",
+        sessionId: id,
+        skillName: skill.name,
+        scope: skill.scope,
+        filePath: skill.filePath,
+        userId: this.userId ?? "unknown",
+        agentId: this.agentId ?? null,
+      });
+    }
 
     // New session: sync memory index, then purge stale investigations (chained to avoid race)
     if (isNewSession && this._sharedMemoryIndexer) {
@@ -1597,6 +1608,7 @@ Always end with a final report even if evidence is incomplete.`;
           durationMs: entry ? Date.now() - entry.startMs : 0,
           userId: this.userId ?? "unknown",
           agentId: this.agentId ?? null,
+          sessionId: id,
         });
       }
       if (event.type === "agent_start") {

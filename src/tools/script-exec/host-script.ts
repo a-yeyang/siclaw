@@ -9,6 +9,7 @@ import { postExecSecurity } from "../infra/security-pipeline.js";
 import { parseArgs, shellEscape } from "../infra/command-sets.js";
 import { validateNodeName, stdinExecCmd } from "../infra/exec-utils.js";
 import { acquireSshTarget, sshExec } from "../infra/ssh-client.js";
+import { emitDiagnostic } from "../../shared/diagnostic-events.js";
 
 interface HostScriptParams {
   host: string;
@@ -30,7 +31,12 @@ interface HostScriptParams {
  * as node_script — scripts are trusted assets); but `args` are shell-escaped
  * to prevent injection.
  */
-export function createHostScriptTool(kubeconfigRef?: KubeconfigRef): ToolDefinition {
+export function createHostScriptTool(
+  kubeconfigRef?: KubeconfigRef,
+  sessionIdRef?: { current: string },
+  userId?: string,
+  agentId?: string | null,
+): ToolDefinition {
   return {
     name: "host_script",
     label: "Host Script",
@@ -119,6 +125,7 @@ Examples:
       const timeout = Math.min(params.timeout_seconds ?? 180, 300) * 1000;
 
       let result;
+      const startMs = Date.now();
       try {
         result = await sshExec(target, remoteCmd, {
           timeoutMs: timeout,
@@ -141,6 +148,19 @@ Examples:
 
       const isError = result.exitCode !== 0 &&
         !(result.exitCode === null && result.stdout.trim());
+      if (params.skill) {
+        emitDiagnostic({
+          type: "skill_call",
+          skillName: params.skill,
+          scriptName: params.script,
+          scope: resolved.scope,
+          outcome: isError ? "error" : "success",
+          durationMs: Date.now() - startMs,
+          sessionId: sessionIdRef?.current,
+          userId: userId ?? "unknown",
+          agentId: agentId ?? null,
+        });
+      }
       const stdoutHeader = isError
         ? `Exit code: ${result.exitCode ?? "unknown"}${result.signal ? ` (signal: ${result.signal})` : ""}\n`
         : "";
@@ -165,5 +185,5 @@ Examples:
 
 export const registration: ToolEntry = {
   category: "script-exec",
-  create: (refs) => createHostScriptTool(refs.kubeconfigRef),
+  create: (refs) => createHostScriptTool(refs.kubeconfigRef, refs.sessionIdRef, refs.userId, refs.agentId),
 };

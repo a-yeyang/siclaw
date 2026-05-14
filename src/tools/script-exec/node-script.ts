@@ -18,6 +18,7 @@ import { postExecSecurity } from "../infra/security-pipeline.js";
 import { runInDebugPod } from "../infra/debug-pod.js";
 import { resolveRequiredKubeconfig, resolveDebugImage } from "../infra/kubeconfig-resolver.js";
 import { ensureClusterForTool } from "../infra/ensure-kubeconfigs.js";
+import { emitDiagnostic } from "../../shared/diagnostic-events.js";
 
 interface NodeScriptParams {
   node: string;
@@ -30,7 +31,12 @@ interface NodeScriptParams {
   timeout_seconds?: number;
 }
 
-export function createNodeScriptTool(kubeconfigRef?: KubeconfigRef, userId?: string): ToolDefinition {
+export function createNodeScriptTool(
+  kubeconfigRef?: KubeconfigRef,
+  userId?: string,
+  sessionIdRef?: { current: string },
+  agentId?: string | null,
+): ToolDefinition {
   return {
     name: "node_script",
     label: "Node Script",
@@ -178,6 +184,7 @@ Examples:
         "--", "sh", "-c", innerCmd,
       ];
 
+      const startMs = Date.now();
       const execResult = await runInDebugPod(
         { userId: userId ?? "unknown", nodeName: params.node, command: nsenterCmd, image, clusterKey, stdinData: resolved.content },
         env,
@@ -194,6 +201,19 @@ Examples:
       const filteredStderr = filterPodNoise(execResult.stderr);
       const isError = execResult.exitCode !== 0 &&
         !(execResult.exitCode === null && execResult.stdout.trim());
+      if (params.skill) {
+        emitDiagnostic({
+          type: "skill_call",
+          skillName: params.skill,
+          scriptName: params.script,
+          scope: resolved.scope,
+          outcome: isError ? "error" : "success",
+          durationMs: Date.now() - startMs,
+          sessionId: sessionIdRef?.current,
+          userId: userId ?? "unknown",
+          agentId: agentId ?? null,
+        });
+      }
       const stdout = isError
         ? `Exit code: ${execResult.exitCode ?? "unknown"}\n${execResult.stdout.trim()}`
         : execResult.stdout.trim();
@@ -207,5 +227,5 @@ Examples:
 
 export const registration: ToolEntry = {
   category: "script-exec",
-  create: (refs) => createNodeScriptTool(refs.kubeconfigRef, refs.userId),
+  create: (refs) => createNodeScriptTool(refs.kubeconfigRef, refs.userId, refs.sessionIdRef, refs.agentId),
 };

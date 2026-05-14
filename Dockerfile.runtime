@@ -30,6 +30,7 @@ RUN npm ci --omit=dev
 
 # Copy compiled JS
 COPY --from=builder /app/dist/ ./dist/
+COPY scripts/skill-audit-summary.mjs ./scripts/skill-audit-summary.mjs
 
 # Copy builtin skills
 COPY skills/core/ ./skills/core/

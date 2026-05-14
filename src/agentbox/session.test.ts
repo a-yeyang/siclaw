@@ -82,6 +82,7 @@ vi.mock("../core/agent-factory.js", async () => {
         mcpManager: { shutdown: async () => {} },
         memoryIndexer: undefined,
         dpStateRef: { active: false },
+        skillAuditEntries: [],
       };
     },
   };

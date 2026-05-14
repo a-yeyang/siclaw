@@ -12,10 +12,20 @@
 
 import type { BrainSessionStats, BrainModelInfo } from "../core/brain-session.js";
 
+export type SkillAuditScope = "builtin" | "global" | "platform" | "unknown";
+
 // ── Event types ──
 
 export type DiagnosticEvent =
   // Prompt lifecycle
+  | {
+      type: "prompt_started";
+      sessionId: string;
+      promptPreview: string;
+      promptChars: number;
+      userId?: string;
+      agentId?: string | null;
+    }
   | {
       type: "prompt_complete";
       sessionId: string;
@@ -37,6 +47,7 @@ export type DiagnosticEvent =
       durationMs: number;
       userId: string;
       agentId: string | null;
+      sessionId?: string;
     }
   // WebSocket connections (Gateway)
   | { type: "ws_connected" }
@@ -58,6 +69,25 @@ export type DiagnosticEvent =
       outcome: "success" | "error";
       durationMs: number;
       sessionId?: string;
+      userId: string;
+      agentId: string | null;
+    }
+  // Skill audit lifecycle
+  | {
+      type: "skill_available";
+      sessionId: string;
+      skillName: string;
+      scope: SkillAuditScope;
+      filePath?: string;
+      userId: string;
+      agentId: string | null;
+    }
+  | {
+      type: "skill_read";
+      sessionId: string;
+      skillName: string;
+      scope: SkillAuditScope;
+      filePath?: string;
       userId: string;
       agentId: string | null;
     }
