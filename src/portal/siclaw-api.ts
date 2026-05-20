@@ -34,6 +34,11 @@ import {
   safeParseJson,
   toSqlTimestamp,
 } from "../gateway/dialect-helpers.js";
+import {
+  queryTopSkills,
+  queryBottomSkills,
+  queryNeverUsedSkills,
+} from "../gateway/skill-metrics-store.js";
 import { evaluateScriptsStatic, buildAssessment } from "../gateway/skills/script-evaluator.js";
 import { evaluateScriptsAI } from "../gateway/skills/ai-security-reviewer.js";
 import { parseFrontmatter } from "../gateway/skills/builtin-sync.js";
@@ -2820,6 +2825,49 @@ export function registerSiclawRoutes(router: RestRouter, config: SiclawConfig, c
       outcome: r.outcome, durationMs: r.durationMs,
       timestamp: r.timestamp instanceof Date ? r.timestamp.toISOString() : r.timestamp,
     });
+  });
+
+  // GET /api/v1/siclaw/metrics/skills
+  // Skill usage frequency dashboard. Reads only the bounded rollup/stats tables
+  // (+ skills catalogue) — never the unbounded raw event table — so cost scales
+  // with (skills × days), not total call volume.
+  //   order=top    — most-used in window           (skill_usage_daily)
+  //   order=bottom — least-used in window, incl. zero-usage (skills LEFT JOIN rollup)
+  //   order=never  — least-recently/never used, lifetime    (skills LEFT JOIN stats)
+  //   period=today|7d|30d  OR  from=YYYY-MM-DD&to=YYYY-MM-DD (custom range)
+  router.get("/api/v1/siclaw/metrics/skills", async (req, res) => {
+    const admin = requireAdmin(req, config.jwtSecret);
+    if (!admin) { sendJson(res, 403, { error: "Forbidden: admin only" }); return; }
+
+    const query = parseQuery(req.url ?? "");
+    const order = query.order === "bottom" || query.order === "never" ? query.order : "top";
+    const limit = Math.min(100, Math.max(1, parseInt(query.limit || "10", 10)));
+
+    if (order === "never") {
+      const skills = await queryNeverUsedSkills(limit);
+      sendJson(res, 200, { order, skills });
+      return;
+    }
+
+    // Resolve the day window: explicit from/to wins, else fall back to period.
+    const dayOf = (d: Date) => d.toISOString().slice(0, 10);
+    let fromDay: string;
+    let toDay: string;
+    if (query.from && query.to) {
+      fromDay = query.from;
+      toDay = query.to;
+    } else {
+      const period = query.period || "7d";
+      const rangeMs = PERIODS[period];
+      if (!rangeMs) { sendJson(res, 400, { error: "Invalid period" }); return; }
+      fromDay = dayOf(new Date(Date.now() - rangeMs));
+      toDay = dayOf(new Date());
+    }
+
+    const skills = order === "bottom"
+      ? await queryBottomSkills(fromDay, toDay, limit)
+      : await queryTopSkills(fromDay, toDay, limit);
+    sendJson(res, 200, { order, from: fromDay, to: toDay, skills });
   });
 
   // ================================================================

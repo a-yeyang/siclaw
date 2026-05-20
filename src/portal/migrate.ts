@@ -393,6 +393,45 @@ const PORTAL_SCHEMA_SQLS: string[] = [
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`,
 
+  // ── Skill usage telemetry (frequency/quality dashboard) ──
+  // Three-layer model, deliberately decoupled by cardinality so dashboard
+  // queries never touch the unbounded raw table:
+  //   skill_call_events  — raw append-only detail (UNBOUNDED). Source of truth;
+  //                        also backs the per-message audit drill-down.
+  //   skill_usage_daily  — per (skill, day) rollup (BOUNDED: skills × days).
+  //                        Backs windowed top-N / bottom-N frequency views.
+  //   skill_stats        — one row per skill (BOUNDED: skills). Backs the
+  //                        "never used / least-recently used" zombie view;
+  //                        last_called_at IS NULL ⇒ never invoked.
+  `CREATE TABLE IF NOT EXISTS skill_call_events (
+    id CHAR(36) PRIMARY KEY,
+    session_id CHAR(36),
+    message_id CHAR(36),
+    skill_name VARCHAR(255) NOT NULL,
+    script_name VARCHAR(255),
+    scope VARCHAR(20) NOT NULL,
+    outcome VARCHAR(20) NOT NULL,
+    duration_ms INT NOT NULL,
+    user_id VARCHAR(255) NOT NULL,
+    agent_id CHAR(36),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE TABLE IF NOT EXISTS skill_usage_daily (
+    skill_name VARCHAR(255) NOT NULL,
+    day DATE NOT NULL,
+    scope VARCHAR(20) NOT NULL,
+    call_count INT NOT NULL DEFAULT 0,
+    error_count INT NOT NULL DEFAULT 0,
+    total_duration_ms BIGINT NOT NULL DEFAULT 0,
+    PRIMARY KEY (skill_name, day)
+  )`,
+  `CREATE TABLE IF NOT EXISTS skill_stats (
+    skill_name VARCHAR(255) PRIMARY KEY,
+    total_calls BIGINT NOT NULL DEFAULT 0,
+    error_calls BIGINT NOT NULL DEFAULT 0,
+    last_called_at TIMESTAMP NULL DEFAULT NULL
+  )`,
+
   // Knowledge Repos & Versions (admin-managed wiki packages)
   `CREATE TABLE IF NOT EXISTS knowledge_repos (
     id CHAR(36) PRIMARY KEY,
@@ -509,6 +548,16 @@ export async function runPortalMigrations(): Promise<void> {
   // indexes added later). Safe to run now that all referenced columns exist.
   await createIndexes();
   await ensureIndex(db, "skills", "idx_skills_overlay", "overlay_of");
+
+  // Skill usage telemetry indexes. The rollup PK (skill_name, day) already
+  // serves per-skill lookups (bottom-N JOIN, drill-down); idx_sud_day adds the
+  // cross-skill windowed scan path. Raw-event indexes serve the audit views.
+  await ensureIndex(db, "skill_call_events", "idx_sce_message", "message_id");
+  await ensureIndex(db, "skill_call_events", "idx_sce_skill_created", "skill_name, created_at");
+  await ensureIndex(db, "skill_call_events", "idx_sce_session", "session_id");
+  await ensureIndex(db, "skill_call_events", "idx_sce_created", "created_at");
+  await ensureIndex(db, "skill_usage_daily", "idx_sud_day", "day");
+  await ensureIndex(db, "skill_stats", "idx_skill_stats_last", "last_called_at");
 
   // Relax the unique (org_id, name) constraint so a builtin skill and its
   // overlay can share the same name. Drop the legacy unique index (MySQL only —

@@ -1,4 +1,4 @@
-#!/bin/bash
+好的#!/bin/bash
 set -euo pipefail
 
 # Retrieve logs from the current node.

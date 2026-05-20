@@ -15,6 +15,7 @@ import {
   type SkillCallStats,
   type MetricsSnapshot,
 } from "../shared/metrics-types.js";
+import { recordSkillCallEvent, recordSkillCallDelta } from "./skill-metrics-store.js";
 
 /** Interface for LocalCollector dependency injection (Local mode only) */
 export interface LocalCollectorRef {
@@ -62,6 +63,21 @@ export class MetricsAggregator {
     onDiagnostic((event) => {
       if (event.type === "ws_connected") this.wsConnections++;
       if (event.type === "ws_disconnected") this.wsConnections = Math.max(0, this.wsConnections - 1);
+      // Local mode: skill calls fire on this same in-process bus, so we get
+      // full-fidelity rows here. In K8s the call fires inside the AgentBox pod
+      // and only reaches us as an aggregated delta via mergeSnapshot() below.
+      if (this.mode === "local" && event.type === "skill_call") {
+        recordSkillCallEvent({
+          skillName: event.skillName,
+          scriptName: event.scriptName ?? null,
+          scope: event.scope,
+          outcome: event.outcome,
+          durationMs: event.durationMs,
+          sessionId: event.sessionId ?? null,
+          userId: event.userId,
+          agentId: event.agentId,
+        }).catch((err) => console.warn("[metrics-aggregator] skill event persist failed:", err));
+      }
     });
 
     if (mode === "k8s") {
@@ -142,6 +158,16 @@ export class MetricsAggregator {
       } else {
         this.skillCallMap.set(key, { userId: delta.userId, agentId: delta.agentId, skillName: delta.skillName, scope: delta.scope, success: delta.success, error: delta.error, totalDurationMs: delta.avgDurationMs * totalDelta });
       }
+
+      // K8s mode: persist the aggregated delta to the durable rollup/stats
+      // tables (counts only — no raw event, session, or message granularity).
+      recordSkillCallDelta({
+        skillName: delta.skillName,
+        scope: delta.scope,
+        success: delta.success,
+        error: delta.error,
+        avgDurationMs: delta.avgDurationMs,
+      }).catch((err) => console.warn("[metrics-aggregator] skill delta persist failed:", err));
     }
   }
 

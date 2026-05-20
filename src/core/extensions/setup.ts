@@ -309,7 +309,7 @@ async function addKubeconfig(
     kubeconfigContent = raw;
     try {
       const yamlMod = await import("js-yaml");
-      const kc = yamlMod.load(raw) as Record<string, unknown>;
+      const kc = yamlMod.default.load(raw) as Record<string, unknown>;
       if (kc?.["current-context"]) {
         defaultName = String(kc["current-context"]);
       }
@@ -325,7 +325,7 @@ async function addKubeconfig(
     try {
       const yamlMod = await import("js-yaml");
       const content = fs.readFileSync(resolvedPath, "utf-8");
-      const kc = yamlMod.load(content) as Record<string, unknown>;
+      const kc = yamlMod.default.load(content) as Record<string, unknown>;
       if (kc?.["current-context"]) {
         defaultName = String(kc["current-context"]);
       }
