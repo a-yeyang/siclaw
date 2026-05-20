@@ -8,6 +8,7 @@
 import crypto from "node:crypto";
 import http from "node:http";
 import { getDb } from "../gateway/db.js";
+import { recordSkillCallDelta } from "../gateway/skill-metrics-store.js";
 import { buildUpsert, safeParseJson, toSqlTimestamp } from "../gateway/dialect-helpers.js";
 import { createTaskNotification } from "./notification-api.js";
 import {
@@ -2187,6 +2188,19 @@ export function buildAdapterRpcHandlers(): Map<string, (params: any, agentId: st
       sessions_deleted: sessResult?.affectedRows ?? 0,
       runs_deleted: runsResult?.affectedRows ?? 0,
     };
+  });
+
+  // --- metrics.* ---
+
+  handlers.set("metrics.recordSkillDelta", async (params) => {
+    await recordSkillCallDelta({
+      skillName: params.skillName,
+      scope: params.scope,
+      success: params.success,
+      error: params.error,
+      avgDurationMs: params.avgDurationMs,
+    });
+    return {};
   });
 
   // --- channel.* ---

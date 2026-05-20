@@ -54,7 +54,7 @@ import { appendMessage, incrementMessageCount, ensureChatSession } from "./chat-
 import { consumeAgentSse } from "./sse-consumer.js";
 import { buildRedactionConfigForModelConfig } from "./output-redactor.js";
 import { MetricsAggregator } from "./metrics-aggregator.js";
-import { startSkillEventBusBridge, persistSkillDelta } from "./skill-metrics-bridge.js";
+import { startSkillEventBusBridge } from "./skill-metrics-bridge.js";
 import { LocalSpawner } from "./agentbox/local-spawner.js";
 import { sessionRegistry } from "./session-registry.js";
 
@@ -479,7 +479,11 @@ export async function startRuntime(opts: StartRuntimeOptions): Promise<RuntimeSe
           return null;
         }
       },
-    }, persistSkillDelta);
+    }, (delta) => {
+      // K8s mode: Runtime has no DB — delegate persistence to Portal via RPC.
+      frontendClient.request("metrics.recordSkillDelta", delta)
+        .catch((err: unknown) => console.warn("[metrics-aggregator] skill delta RPC failed:", err));
+    });
   } else {
     const { localCollector } = await import("../shared/local-collector.js");
     metricsAggregator = new MetricsAggregator("local", localCollector);
