@@ -312,6 +312,11 @@ export function PilotArea({
     const text = editingDraft.trim()
     if (!text || isLoading) return
     wrappedSendMessage(text)
+    // wrappedSendMessage records lastSentRef so wrappedAbort can restore the
+    // draft if the user aborts a normal send. For edit-resends the message is
+    // already visible in the conversation, so we don't want abort to re-fill
+    // the input with it.
+    lastSentRef.current = null
     setEditingMessageId(null)
     setEditingDraft("")
   }, [editingDraft, isLoading, wrappedSendMessage])
