@@ -15,7 +15,13 @@ import {
   type SkillCallStats,
   type MetricsSnapshot,
 } from "../shared/metrics-types.js";
-import { recordSkillCallEvent, recordSkillCallDelta } from "./skill-metrics-store.js";
+
+// NOTE: keep this file free of any Portal-DB imports. It is compiled into both
+// the Gateway and AgentBox images (Dockerfile.agentbox copies it), and the
+// AgentBox build deliberately excludes `db.ts` / `dialect-helpers.ts` because
+// pods must not connect to the Portal DB directly. Durable persistence of
+// skill telemetry lives in `skill-metrics-bridge.ts`, which is Gateway-only
+// and wires itself in via the optional `onSkillDelta` callback below.
 
 /** Interface for LocalCollector dependency injection (Local mode only) */
 export interface LocalCollectorRef {
@@ -59,25 +65,14 @@ export class MetricsAggregator {
     private localRef?: LocalCollectorRef,
     private podLister?: PodLister,
     private snapshotFetcher?: SnapshotFetcher,
+    /** Optional sink for per-(skill, user, agent) deltas merged from K8s pods.
+     *  Wired by the Gateway (skill-metrics-bridge) to persist into Portal DB;
+     *  absent in AgentBox builds, where this class never sees a pod snapshot. */
+    private onSkillDelta?: (delta: SkillCallStats) => void,
   ) {
     onDiagnostic((event) => {
       if (event.type === "ws_connected") this.wsConnections++;
       if (event.type === "ws_disconnected") this.wsConnections = Math.max(0, this.wsConnections - 1);
-      // Local mode: skill calls fire on this same in-process bus, so we get
-      // full-fidelity rows here. In K8s the call fires inside the AgentBox pod
-      // and only reaches us as an aggregated delta via mergeSnapshot() below.
-      if (this.mode === "local" && event.type === "skill_call") {
-        recordSkillCallEvent({
-          skillName: event.skillName,
-          scriptName: event.scriptName ?? null,
-          scope: event.scope,
-          outcome: event.outcome,
-          durationMs: event.durationMs,
-          sessionId: event.sessionId ?? null,
-          userId: event.userId,
-          agentId: event.agentId,
-        }).catch((err) => console.warn("[metrics-aggregator] skill event persist failed:", err));
-      }
     });
 
     if (mode === "k8s") {
@@ -159,15 +154,8 @@ export class MetricsAggregator {
         this.skillCallMap.set(key, { userId: delta.userId, agentId: delta.agentId, skillName: delta.skillName, scope: delta.scope, success: delta.success, error: delta.error, totalDurationMs: delta.avgDurationMs * totalDelta });
       }
 
-      // K8s mode: persist the aggregated delta to the durable rollup/stats
-      // tables (counts only — no raw event, session, or message granularity).
-      recordSkillCallDelta({
-        skillName: delta.skillName,
-        scope: delta.scope,
-        success: delta.success,
-        error: delta.error,
-        avgDurationMs: delta.avgDurationMs,
-      }).catch((err) => console.warn("[metrics-aggregator] skill delta persist failed:", err));
+      // Hand the delta to the optional persistence sink (Gateway-only).
+      this.onSkillDelta?.(delta);
     }
   }
 

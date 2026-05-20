@@ -54,6 +54,7 @@ import { appendMessage, incrementMessageCount, ensureChatSession } from "./chat-
 import { consumeAgentSse } from "./sse-consumer.js";
 import { buildRedactionConfigForModelConfig } from "./output-redactor.js";
 import { MetricsAggregator } from "./metrics-aggregator.js";
+import { startSkillEventBusBridge, persistSkillDelta } from "./skill-metrics-bridge.js";
 import { LocalSpawner } from "./agentbox/local-spawner.js";
 import { sessionRegistry } from "./session-registry.js";
 
@@ -463,6 +464,9 @@ export async function startRuntime(opts: StartRuntimeOptions): Promise<RuntimeSe
   });
 
   // ── MetricsAggregator (K8s: pull loop; Local: proxy to in-process localCollector) ──
+  // Skill telemetry durable sink. Bus subscription captures full-fidelity rows
+  // in Local mode (same process as runtime); the delta callback covers K8s.
+  startSkillEventBusBridge();
   const isK8sMode = !(spawner instanceof LocalSpawner);
   let metricsAggregator: MetricsAggregator;
   if (isK8sMode) {
@@ -475,7 +479,7 @@ export async function startRuntime(opts: StartRuntimeOptions): Promise<RuntimeSe
           return null;
         }
       },
-    });
+    }, persistSkillDelta);
   } else {
     const { localCollector } = await import("../shared/local-collector.js");
     metricsAggregator = new MetricsAggregator("local", localCollector);
