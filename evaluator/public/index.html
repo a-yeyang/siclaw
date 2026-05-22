@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Siclaw Skill Audit Evaluator</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0d1117;
+      --surface:  #161b22;
+      --surface2: #21262d;
+      --border:   #30363d;
+      --accent:   #6366f1;
+      --accent-h: #818cf8;
+      --text:     #e6edf3;
+      --muted:    #8b949e;
+      --ok:       #3fb950;
+      --err:      #f85149;
+      --warn:     #d29922;
+      --info:     #58a6ff;
+      --r:        6px;
+      --mono:     'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 24px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    header svg { flex-shrink: 0; }
+    header h1 { font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+    header .tagline { font-size: 11px; color: var(--muted); margin-top: 1px; }
+    .health {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--border);
+      transition: background .3s;
+    }
+    .dot.ok  { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+    .dot.err { background: var(--err); }
+
+    /* ── Tabs ── */
+    nav {
+      display: flex;
+      gap: 2px;
+      padding: 0 24px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+    .tab {
+      padding: 10px 16px;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: color .15s;
+    }
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--accent-h); border-bottom-color: var(--accent); }
+
+    /* ── Layout ── */
+    main { padding: 24px; max-width: 1160px; }
+    .pane { display: none; }
+    .pane.active { display: block; }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 14px;
+      background: var(--accent);
+      color: #fff;
+      border: none; border-radius: var(--r);
+      font-size: 13px; font-weight: 500;
+      cursor: pointer;
+      transition: background .15s, opacity .15s;
+      white-space: nowrap;
+    }
+    .btn:hover { background: var(--accent-h); }
+    .btn:disabled { opacity: .45; cursor: not-allowed; pointer-events: none; }
+    .btn-ghost {
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+    .btn-ghost:hover { background: var(--surface2); color: var(--text); }
+    .btn-sm { padding: 4px 10px; font-size: 12px; }
+    .btn-danger { background: #6e1c1c; }
+    .btn-danger:hover { background: var(--err); }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 16px;
+    }
+
+    /* ── Badges ── */
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+    .s-queued,.s-injecting,.s-waiting_propagation,
+    .s-triggering,.s-running_agent,.s-evaluating,.s-recovering
+      { background:#0d2040; color:var(--info); }
+    .s-completed  { background:#0f2d1f; color:var(--ok); }
+    .s-failed     { background:#2d0f0f; color:var(--err); }
+    .s-timed_out  { background:#2d1e0f; color:var(--warn); }
+
+    /* ── Table ── */
+    .tbl-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; }
+    th {
+      text-align: left;
+      font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .06em;
+      color: var(--muted);
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    td { padding: 11px 14px; border-bottom: 1px solid var(--border); font-size: 13px; }
+    tr:last-child td { border-bottom: none; }
+    tr.clickable { cursor: pointer; }
+    tr.clickable:hover td { background: var(--surface2); }
+    tr.sel td { background: #1a1f3a !important; }
+
+    /* ── Score bars ── */
+    .sbar { display: flex; align-items: center; gap: 10px; margin: 5px 0; }
+    .sbar .lbl { width: 116px; font-size: 12px; color: var(--muted); }
+    .sbar .track { flex: 1; height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
+    .sbar .fill  { height: 100%; border-radius: 3px; transition: width .4s; }
+    .sbar .num   { width: 52px; text-align: right; font-size: 12px; font-family: var(--mono); }
+
+    /* ── Detail panel ── */
+    .detail {
+      margin-top: 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      overflow: hidden;
+    }
+    .detail-scores {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .detail pre {
+      padding: 16px;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.65;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: var(--muted);
+    }
+    .detail pre .line-sep   { color: #404859; }
+    .detail pre .line-head  { color: var(--accent-h); font-weight: bold; }
+    .detail pre .line-ok    { color: var(--ok); }
+    .detail pre .line-err   { color: var(--err); }
+    .detail pre .line-warn  { color: var(--warn); }
+    .detail pre .line-num   { color: var(--info); }
+
+    /* ── Case grid ── */
+    .case-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+    .case-card { border: 1px solid var(--border); border-radius: var(--r); padding: 16px; background: var(--surface); }
+    .case-card:hover { border-color: var(--accent); }
+    .case-id { font-family: var(--mono); font-size: 13px; font-weight: 600; }
+    .case-title { font-size: 12px; color: var(--muted); margin: 4px 0 10px; }
+    .case-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 14px; font-size: 11px; color: var(--muted); }
+    .case-meta span { color: var(--text); }
+
+    /* ── Upload panel ── */
+    textarea {
+      width: 100%;
+      min-height: 200px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 12px;
+      resize: vertical;
+      outline: none;
+      line-height: 1.6;
+    }
+    textarea:focus { border-color: var(--accent); }
+
+    /* ── Select ── */
+    select {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      color: var(--text);
+      padding: 6px 12px;
+      font-size: 13px;
+      cursor: pointer;
+      outline: none;
+      min-width: 180px;
+    }
+    select:focus { border-color: var(--accent); }
+
+    /* ── Alerts ── */
+    .alert {
+      padding: 10px 14px;
+      border-radius: var(--r);
+      font-size: 13px;
+      margin-bottom: 12px;
+      animation: fadeIn .2s;
+    }
+    .alert-ok   { background:#0f2d1f; color:#7ee787; border:1px solid #196c2e; }
+    .alert-err  { background:#2d0f0f; color:#ffa198; border:1px solid #6e1c1c; }
+    .alert-info { background:#0d2040; color:#79c0ff; border:1px solid #1158c7; }
+    @keyframes fadeIn { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:none; } }
+
+    /* ── Metrics summary cards ── */
+    .stat-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+    .stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 16px; }
+    .stat .v { font-size: 28px; font-weight: 700; color: var(--accent-h); font-family: var(--mono); line-height: 1; }
+    .stat .l { font-size: 11px; color: var(--muted); margin-top: 6px; text-transform: uppercase; letter-spacing: .06em; }
+
+    /* ── Misc helpers ── */
+    .row { display: flex; align-items: center; gap: 10px; }
+    .row-between { display: flex; align-items: center; justify-content: space-between; }
+    .mb-16 { margin-bottom: 16px; }
+    .mb-8  { margin-bottom: 8px; }
+    .mt-8  { margin-top: 8px; }
+    .mt-16 { margin-top: 16px; }
+    .sec-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin-bottom: 12px; }
+    .mono { font-family: var(--mono); }
+    .muted { color: var(--muted); }
+    .text-sm { font-size: 12px; }
+
+    /* ── Spinner ── */
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .spin {
+      display: inline-block;
+      width: 12px; height: 12px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      vertical-align: middle;
+      margin-left: 4px;
+    }
+
+    /* ── Empty state ── */
+    .empty { text-align: center; padding: 48px 16px; color: var(--muted); }
+    .empty .ico { font-size: 30px; margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent-h)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>
+  </svg>
+  <div>
+    <h1>Siclaw Skill Audit Evaluator</h1>
+    <div class="tagline">fault-inject → trigger → trace → score</div>
+  </div>
+  <div class="health">
+    <div class="dot" id="dot"></div>
+    <span id="health-lbl">checking…</span>
+  </div>
+</header>
+
+<nav>
+  <button class="tab active" data-tab="cases">📋 Cases</button>
+  <button class="tab" data-tab="runs">▶ Runs</button>
+  <button class="tab" data-tab="metrics">📊 Metrics</button>
+</nav>
+
+<main>
+
+  <!-- ── CASES ── -->
+  <section id="pane-cases" class="pane active">
+    <div class="row-between mb-16">
+      <div class="sec-label" style="margin:0">Loaded Cases</div>
+      <div class="row">
+        <button class="btn btn-ghost btn-sm" onclick="loadCases()">↻ Refresh</button>
+        <button class="btn btn-sm" id="btn-show-up">＋ Upload Case</button>
+      </div>
+    </div>
+    <div id="cases-alert"></div>
+
+    <!-- upload form (hidden by default) -->
+    <div id="up-panel" style="display:none" class="card mb-16">
+      <div class="sec-label">Paste Case YAML</div>
+      <textarea id="yaml-input" placeholder="id: my-case-001&#10;title: &quot;My test case&quot;&#10;fault:&#10;  injector: image_pull_failure&#10;  ..."></textarea>
+      <div class="row mt-8">
+        <button class="btn" onclick="uploadCase()">Upload</button>
+        <button class="btn btn-ghost" onclick="hideUpload()">Cancel</button>
+      </div>
+    </div>
+
+    <div id="case-grid" class="case-grid">
+      <div class="empty" style="grid-column:1/-1">
+        <div class="ico">📋</div>
+        <div>No cases loaded. Upload a YAML to get started.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── RUNS ── -->
+  <section id="pane-runs" class="pane">
+    <div class="row-between mb-16">
+      <div class="sec-label" style="margin:0">Run History</div>
+      <div class="row">
+        <select id="sel-case"><option value="">Select case…</option></select>
+        <button class="btn btn-sm" onclick="startRun()">▶ Start Run</button>
+        <button class="btn btn-ghost btn-sm" onclick="refreshRuns()">↻</button>
+      </div>
+    </div>
+    <div id="runs-alert"></div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Run ID</th>
+            <th>Case</th>
+            <th>Status</th>
+            <th>TTL</th>
+            <th>Skill Score</th>
+            <th>Started</th>
+          </tr>
+        </thead>
+        <tbody id="runs-body">
+          <tr><td colspan="6" class="empty" style="text-align:center">No runs yet</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div id="run-detail"></div>
+  </section>
+
+  <!-- ── METRICS ── -->
+  <section id="pane-metrics" class="pane">
+    <div class="row-between mb-16">
+      <div class="sec-label" style="margin:0">Aggregate Metrics</div>
+      <button class="btn btn-ghost btn-sm" onclick="loadMetrics()">↻ Refresh</button>
+    </div>
+    <div id="metrics-body">
+      <div class="empty"><div class="ico">📊</div><div>No data yet. Run a case first.</div></div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+// ── state ────────────────────────────────────────────────────────────
+const S = {
+  cases:    [],      // Case[]
+  runs:     {},      // runId → RunReport
+  selRun:   null,    // selected runId for detail panel
+  timers:   {},      // runId → intervalId
+};
+
+// ── API ──────────────────────────────────────────────────────────────
+async function req(method, path, body) {
+  const opts = { method, headers: {} };
+  if (body !== undefined) {
+    opts.body = typeof body === 'string' ? body : JSON.stringify(body);
+    opts.headers['Content-Type'] = typeof body === 'string'
+      ? 'text/plain; charset=utf-8'
+      : 'application/json';
+  }
+  const r = await fetch(path, opts);
+  const txt = await r.text();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${txt.slice(0, 300)}`);
+  try { return JSON.parse(txt); } catch { return txt; }
+}
+
+// ── health ───────────────────────────────────────────────────────────
+async function checkHealth() {
+  const dot = document.getElementById('dot');
+  const lbl = document.getElementById('health-lbl');
+  try {
+    await req('GET', '/healthz');
+    dot.className = 'dot ok';
+    lbl.textContent = 'online';
+  } catch {
+    dot.className = 'dot err';
+    lbl.textContent = 'unreachable';
+  }
+}
+checkHealth();
+setInterval(checkHealth, 30_000);
+
+// ── tabs ─────────────────────────────────────────────────────────────
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.onclick = () => {
+    const t = btn.dataset.tab;
+    document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('.pane').forEach(p =>
+      p.classList.toggle('active', p.id === `pane-${t}`));
+    if (t === 'metrics') loadMetrics();
+    if (t === 'runs')    syncRunSelect();
+  };
+});
+function gotoTab(t) {
+  document.querySelector(`.tab[data-tab="${t}"]`).click();
+}
+
+// ── cases ────────────────────────────────────────────────────────────
+async function loadCases() {
+  try {
+    const { cases } = await req('GET', '/cases');
+    S.cases = cases ?? [];
+    renderCases();
+    syncRunSelect();
+  } catch (e) { alert_('cases-alert', 'err', e.message); }
+}
+
+function renderCases() {
+  const g = document.getElementById('case-grid');
+  if (!S.cases.length) {
+    g.innerHTML = `<div class="empty" style="grid-column:1/-1">
+      <div class="ico">📋</div><div>No cases loaded. Upload a YAML to get started.</div></div>`;
+    return;
+  }
+  g.innerHTML = S.cases.map(c => `
+    <div class="case-card">
+      <div class="row-between mb-8">
+        <div class="case-id">${esc(c.id)}</div>
+        <button class="btn btn-sm" onclick="quickRun('${esc(c.id)}')">▶ Run</button>
+      </div>
+      <div class="case-title">${esc(c.title)}</div>
+      <div class="case-meta">
+        <div>Injector</div>  <div><span>${esc(c.fault?.injector ?? '—')}</span></div>
+        <div>Propagation</div><div><span>${c.fault?.propagation_wait_sec ?? 0}s</span></div>
+        <div>Budget</div>    <div><span>${c.budget?.ttl_sec ?? '?'}s / ${(c.budget?.max_tokens ?? 0).toLocaleString()} tok</span></div>
+        <div>Must use</div>  <div><span style="font-size:11px">${mustUseLabel(c)}</span></div>
+      </div>
+    </div>`).join('');
+}
+
+function hideUpload()  { document.getElementById('up-panel').style.display = 'none'; }
+document.getElementById('btn-show-up').onclick = () => {
+  const p = document.getElementById('up-panel');
+  p.style.display = p.style.display === 'none' ? 'block' : 'none';
+};
+
+async function uploadCase() {
+  const yaml = document.getElementById('yaml-input').value.trim();
+  if (!yaml) return alert_('cases-alert', 'err', 'YAML is empty');
+  try {
+    const r = await req('POST', '/cases', yaml);
+    alert_('cases-alert', 'ok', `Case "${r.id}" uploaded`);
+    hideUpload();
+    document.getElementById('yaml-input').value = '';
+    await loadCases();
+  } catch (e) { alert_('cases-alert', 'err', `Upload failed: ${e.message}`); }
+}
+
+// ── runs ─────────────────────────────────────────────────────────────
+function syncRunSelect() {
+  const sel = document.getElementById('sel-case');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">Select case…</option>' +
+    S.cases.map(c =>
+      `<option value="${esc(c.id)}"${c.id === cur ? ' selected' : ''}>${esc(c.id)}</option>`
+    ).join('');
+}
+
+async function startRun() {
+  const id = document.getElementById('sel-case').value;
+  if (!id) return alert_('runs-alert', 'info', 'Select a case first');
+  await fireRun(id);
+}
+
+async function quickRun(id) {
+  gotoTab('runs');
+  await fireRun(id);
+}
+
+async function fireRun(caseId) {
+  try {
+    const r = await req('POST', `/runs?case=${encodeURIComponent(caseId)}`);
+    S.runs[r.runId] = r;
+    renderRunsTable();
+    poll(r.runId);
+    alert_('runs-alert', 'info', `Run started — polling for updates…`);
+  } catch (e) { alert_('runs-alert', 'err', `Failed: ${e.message}`); }
+}
+
+async function refreshRuns() {
+  // Reload in-progress runs
+  const ids = Object.keys(S.runs).filter(id => !terminal(S.runs[id]?.status));
+  await Promise.all(ids.map(fetchRun));
+  renderRunsTable();
+}
+
+async function fetchRun(runId) {
+  try {
+    const r = await req('GET', `/runs/${runId}`);
+    // The server rewrites pending-xxx → real UUID once the engine picks it up
+    if (r.runId && r.runId !== runId) {
+      delete S.runs[runId];
+      if (S.selRun === runId) S.selRun = r.runId;
+    }
+    S.runs[r.runId ?? runId] = r;
+    if (terminal(r.status)) stopPoll(runId);
+    renderRunsTable();
+    const active = S.selRun === runId || S.selRun === r.runId;
+    if (active) renderDetail(r.runId ?? runId);
+  } catch { /* network blip */ }
+}
+
+function poll(runId) {
+  stopPoll(runId);
+  S.timers[runId] = setInterval(() => fetchRun(runId), 2_500);
+}
+function stopPoll(runId) {
+  clearInterval(S.timers[runId]);
+  delete S.timers[runId];
+}
+function terminal(s) {
+  return s === 'completed' || s === 'failed' || s === 'timed_out';
+}
+
+function renderRunsTable() {
+  const body = document.getElementById('runs-body');
+  const list = Object.values(S.runs).sort(
+    (a, b) => new Date(b.startedAt) - new Date(a.startedAt)
+  );
+  if (!list.length) {
+    body.innerHTML = `<tr><td colspan="6" class="empty" style="text-align:center">No runs yet</td></tr>`;
+    return;
+  }
+  body.innerHTML = list.map(r => {
+    const sc = r.score?.skill_score;
+    const scHtml = sc != null
+      ? `<span class="mono" style="color:${scColor(sc)}">${sc.toFixed(4)}</span>`
+      : `<span class="muted">—</span>`;
+    const live = !terminal(r.status);
+    const sel  = r.runId === S.selRun ? 'sel' : '';
+    return `<tr class="clickable ${sel}" onclick="selectRun('${esc(r.runId)}')">
+      <td class="mono text-sm">${esc(r.runId.slice(0,8))}…${live ? '<span class="spin"></span>' : ''}</td>
+      <td>${esc(r.caseId)}</td>
+      <td><span class="badge s-${esc(r.status)}">${esc(r.status.replace(/_/g,' '))}</span></td>
+      <td class="muted">${r.metrics?.ttl_ms != null ? fmtMs(r.metrics.ttl_ms) : '—'}</td>
+      <td>${scHtml}</td>
+      <td class="muted text-sm">${fmtDate(r.startedAt)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function selectRun(id) {
+  S.selRun = S.selRun === id ? null : id;
+  renderRunsTable();
+  if (S.selRun) renderDetail(id);
+  else document.getElementById('run-detail').innerHTML = '';
+}
+
+async function renderDetail(runId) {
+  const panel = document.getElementById('run-detail');
+  panel.innerHTML = `<div class="detail"><pre class="muted">Loading report…</pre></div>`;
+  try {
+    const [r, txt] = await Promise.all([
+      req('GET', `/runs/${runId}`),
+      fetch(`/runs/${runId}?format=text`).then(x => x.text()),
+    ]);
+    S.runs[runId] = r;
+    const sc = r.score;
+    let scoreHtml = '';
+    if (sc) {
+      scoreHtml = `<div class="detail-scores">
+        <div class="sec-label" style="margin-bottom:10px">Score Overview</div>
+        ${sbar('Sufficiency',  sc.sufficiency,  '#3fb950', false)}
+        ${sbar('Necessity',    sc.necessity,    '#58a6ff', false)}
+        ${sbar('Skill Score',  sc.skill_score,  '#818cf8', false)}
+        ${sbar('Noise Ratio',  sc.noise_ratio,  '#d29922', true)}
+        ${sc.missing_must_use.length ? `<div style="margin-top:10px;font-size:12px;color:var(--err)">⚠ Missing must-use: ${esc(sc.missing_must_use.join(', '))}</div>` : ''}
+        ${sc.forbidden_used.length   ? `<div style="font-size:12px;color:var(--err)">✗ Forbidden used: ${esc(sc.forbidden_used.join(', '))}</div>`   : ''}
+      </div>`;
+    }
+    panel.innerHTML = `<div class="detail">${scoreHtml}<pre>${colorReport(txt)}</pre></div>`;
+  } catch (e) {
+    panel.innerHTML = `<div class="detail"><pre style="color:var(--err)">Error: ${esc(e.message)}</pre></div>`;
+  }
+}
+
+function sbar(label, val, color, invertGood) {
+  const pct = Math.round(val * 100);
+  const c = invertGood
+    ? (val < .2 ? '#3fb950' : val < .5 ? '#d29922' : '#f85149')
+    : color;
+  return `<div class="sbar">
+    <div class="lbl">${label}</div>
+    <div class="track"><div class="fill" style="width:${pct}%;background:${c}"></div></div>
+    <div class="num" style="color:${c}">${val.toFixed(4)}</div>
+  </div>`;
+}
+
+function colorReport(txt) {
+  return txt.split('\n').map(ln => {
+    const e = esc(ln);
+    if (/^─+$/.test(ln))                       return `<span class="line-sep">${e}</span>`;
+    if (/^(EVAL RUN|Case|Status|Score|SCORE|SKILLS|METRICS|TRACE|RCA|RECOMMENDATION)/.test(ln))
+                                                return `<span class="line-head">${e}</span>`;
+    if (/MISSING|FORBIDDEN/.test(ln))           return `<span class="line-err">${e}</span>`;
+    if (/completed|success|hit:/.test(ln))      return `<span class="line-ok">${e}</span>`;
+    if (/failed|error|MISS:/.test(ln))          return `<span class="line-err">${e}</span>`;
+    if (/timed_out|warn/i.test(ln))             return `<span class="line-warn">${e}</span>`;
+    if (/\d+\.\d{4}/.test(ln))                 return `<span class="line-num">${e}</span>`;
+    return e;
+  }).join('\n');
+}
+
+// ── metrics ──────────────────────────────────────────────────────────
+async function loadMetrics() {
+  try {
+    const m = await req('GET', '/metrics');
+    renderMetrics(m);
+  } catch (e) {
+    document.getElementById('metrics-body').innerHTML =
+      `<div class="alert alert-err">${esc(e.message)}</div>`;
+  }
+}
+
+function renderMetrics(m) {
+  const bc = m.byCase  ?? {};
+  const bs = m.bySkill ?? {};
+  const scores = Object.values(bc).map(c => c.lastSkillScore).filter(x => x != null);
+  const avg = scores.length ? (scores.reduce((a,b)=>a+b,0)/scores.length) : null;
+
+  let h = `<div class="stat-row">
+    <div class="stat"><div class="v">${m.totalRuns ?? 0}</div><div class="l">Total Runs</div></div>
+    <div class="stat"><div class="v">${Object.keys(bc).length}</div><div class="l">Cases Tested</div></div>
+    <div class="stat"><div class="v" style="color:${avg!=null?scColor(avg):'var(--accent-h)'}">${avg!=null?avg.toFixed(3):'—'}</div><div class="l">Avg Skill Score</div></div>
+    <div class="stat"><div class="v">${Object.keys(bs).length}</div><div class="l">Unique Skills</div></div>
+  </div>`;
+
+  if (Object.keys(bc).length) {
+    h += `<div class="sec-label">Per Case</div>
+    <div class="tbl-wrap mb-16"><table>
+      <thead><tr><th>Case ID</th><th>Runs</th><th>Last Skill Score</th></tr></thead>
+      <tbody>${Object.entries(bc).map(([id,c]) => `
+        <tr>
+          <td class="mono text-sm">${esc(id)}</td>
+          <td>${c.runs}</td>
+          <td style="color:${c.lastSkillScore!=null?scColor(c.lastSkillScore):'var(--muted)'}">${c.lastSkillScore!=null?c.lastSkillScore.toFixed(4):'—'}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>`;
+  }
+
+  if (Object.keys(bs).length) {
+    h += `<div class="sec-label">Per Skill</div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Skill</th><th>Calls</th><th>Success</th><th>Error</th><th>Rate</th></tr></thead>
+      <tbody>${Object.entries(bs)
+        .sort(([,a],[,b]) => b.invocations - a.invocations)
+        .map(([name,s]) => {
+          const rate = s.invocations ? s.success/s.invocations : 0;
+          return `<tr>
+            <td class="mono text-sm">${esc(name)}</td>
+            <td>${s.invocations}</td>
+            <td style="color:var(--ok)">${s.success}</td>
+            <td style="color:var(--err)">${s.error}</td>
+            <td style="color:${scColor(rate)}">${(rate*100).toFixed(0)}%</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table></div>`;
+  }
+
+  if (!Object.keys(bc).length && !Object.keys(bs).length) {
+    h = `<div class="empty"><div class="ico">📊</div><div>No data yet. Run a case first.</div></div>`;
+  }
+  document.getElementById('metrics-body').innerHTML = h;
+}
+
+// ── helpers ───────────────────────────────────────────────────────────
+function mustUseLabel(c) {
+  const list = c.oracle?.must_use_skills ?? [];
+  const shown = list.slice(0, 3).join(', ');
+  return esc(list.length > 3 ? `${shown} …+${list.length - 3}` : shown || '—');
+}
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function fmtMs(ms) {
+  return ms < 1000 ? `${ms}ms` : `${(ms/1000).toFixed(2)}s`;
+}
+function fmtDate(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('zh-CN', { dateStyle:'short', timeStyle:'medium' });
+}
+function scColor(v) {
+  return v >= .8 ? 'var(--ok)' : v >= .5 ? 'var(--warn)' : 'var(--err)';
+}
+function alert_(id, type, msg) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = `<div class="alert alert-${type}">${esc(msg)}</div>`;
+  setTimeout(() => { if (el) el.innerHTML = ''; }, 6_000);
+}
+
+// ── init ─────────────────────────────────────────────────────────────
+loadCases();
+</script>
+</body>
+</html>

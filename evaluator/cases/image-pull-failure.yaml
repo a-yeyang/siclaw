@@ -1,0 +1,55 @@
+# v0 reference case — the simplest possible scenario that siclaw must
+# identify. We deliberately corrupt the agentbox-job-runner deployment image
+# (a non-critical staging deployment in the `siclaw` namespace) and expect
+# siclaw to diagnose the resulting ImagePullBackOff / ErrImagePull state.
+#
+# Pre-flight: ensure a Deployment named `eval-image-pull-target` exists in
+# the `siclaw` namespace with a container named `app`. The accompanying
+# bootstrap script at scripts/bootstrap-image-pull-target.sh creates one.
+#
+# DO NOT point this at siclaw-portal / siclaw-runtime — breaking them would
+# also break the trigger and trace-read paths.
+
+id: image-pull-failure-001
+title: "ImagePullBackOff: agent must identify pull failure and name the failing pod"
+
+fault:
+  injector: image_pull_failure
+  params:
+    namespace: siclaw
+    deployment: eval-image-pull-target
+    container: app
+    # bad_image: "registry.invalid.siclaw-eval/this-image-does-not-exist:fault"
+  propagation_wait_sec: 30  # enough for the Deployment to roll a fresh ReplicaSet
+
+trigger:
+  prompt: |
+    There's a pod in the `siclaw` namespace whose deployment is named
+    `eval-image-pull-target`. It's not running. Diagnose the root cause and
+    say exactly which kubernetes failure reason applies.
+  agent: sre-default
+  max_steps: 10
+
+oracle:
+  # Skills that legitimately help diagnose ImagePullBackOff. The exact skill
+  # names depend on what siclaw ships; adjust to the actual catalogue.
+  must_use_skills:
+    - kubectl-get-pods
+  may_use_skills:
+    - kubectl-describe-pod
+    - kubectl-get-events
+    - kubectl-get-deployment
+    - kubectl-logs
+  # Skills that have nothing to do with image-pull issues. If they fire we
+  # know the agent thrashed.
+  must_not_use_skills:
+    - roce-perftest-pod
+    - find-node
+  rca_must_contain:
+    - "ImagePullBackOff"
+  recommendation_must_contain:
+    - "image"
+
+budget:
+  ttl_sec: 600
+  max_tokens: 50000

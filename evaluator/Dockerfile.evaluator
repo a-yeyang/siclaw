@@ -1,0 +1,49 @@
+# siclaw-evaluator — multi-stage build
+#
+# Mirrors the style of siclaw/Dockerfile.runtime: node:22-slim builder →
+# node:22-slim runtime. We bake `kubectl` in as a fallback diagnostic tool
+# even though the in-process K8s client handles inject/recover natively.
+
+# ── Build stage ─────────────────────────────────────────────
+FROM node:22-slim AS builder
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci
+
+COPY tsconfig.json ./
+COPY src/ ./src/
+RUN npx tsc
+
+# ── Production stage ────────────────────────────────────────
+FROM node:22-slim
+
+# kubectl is optional but useful for in-pod debugging; @kubernetes/client-node
+# handles all programmatic K8s calls in-process.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      curl ca-certificates \
+    && curl -fsSL "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
+       -o /usr/local/bin/kubectl \
+    && chmod +x /usr/local/bin/kubectl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+COPY --from=builder /app/dist/ ./dist/
+COPY cases/ ./cases/
+COPY public/ ./public/
+
+ENV NODE_ENV=production
+ENV EVAL_PORT=8080
+ENV EVAL_NAMESPACE=siclaw
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -fsS http://localhost:${EVAL_PORT}/healthz || exit 1
+
+CMD ["node", "dist/main.js"]
