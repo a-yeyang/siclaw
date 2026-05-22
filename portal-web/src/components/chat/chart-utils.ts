@@ -407,6 +407,31 @@ export function chartSpecLooksIncomplete(raw: string): boolean {
   return depth !== 0 || inStr
 }
 
+// Attempt to repair common LLM-induced JSON corruption before falling back to
+// the backend fixer. Returns a candidate repaired string if a known pattern
+// matches, or null if no heuristic applies. The caller should run
+// tryParseChartSpec() on the result to confirm it is actually valid.
+//
+// Known patterns:
+//   1. Escaped quotes — the model treats the chart fence as a string context
+//      and emits {\"type\":\"pie\",...} instead of {"type":"pie",...}.
+//      Fix: strip the backslash before each escaped quote, then unescape \\
+//      that guarded real backslashes.
+//   2. Trailing markdown fence — model accidentally wraps in extra ```json…```
+//      inside the chart block. Fix: extract the innermost {...} object.
+export function tryRepairChartJson(raw: string): string | null {
+  // Pattern 1: escaped quotes (most common LLM escaping artifact)
+  if (raw.includes('\\"')) {
+    // Process \\" → \" first (real escaped-quote inside value), then \" → "
+    const unescaped = raw.replace(/\\\\"/g, "\x00").replace(/\\"/g, '"').replace(/\x00/g, '\\"')
+    if (unescaped !== raw) return unescaped
+  }
+  // Pattern 2: extra backtick fences wrapping the JSON
+  const fenceMatch = raw.match(/```(?:json|chart)?\s*(\{[\s\S]*\})\s*```/)
+  if (fenceMatch?.[1]) return fenceMatch[1]
+  return null
+}
+
 // The chart spec round-trips through the LLM as plain text in the final reply.
 // On a small fraction of generations the model double-escapes non-ASCII —
 // emits a literal backslash-u-XXXX sequence instead of the character (or a

@@ -1,9 +1,10 @@
-import { createContext, useContext, useMemo } from "react"
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react"
 import ReactMarkdown, { type Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { Check, Copy } from "lucide-react"
 import { cn } from "./cn"
 import { ChartRenderer, chartSpecLooksIncomplete, tryParseChartSpec } from "./ChartRenderer"
+import { tryRepairChartJson, type ChartSpec } from "./chart-utils"
 import { MermaidRenderer } from "./MermaidRenderer"
 import { useCopyFeedback } from "./clipboard"
 
@@ -95,7 +96,7 @@ function hasLanguageClass(className: string | undefined, language: string): bool
   return className?.split(/\s+/).includes(`language-${language}`) ?? false
 }
 
-function ChartLoading() {
+function ChartLoading({ message = "Generating chart…" }: { message?: string }) {
   return (
     <div
       className="my-3 flex items-center gap-2 rounded-lg border border-border bg-secondary/30 px-4 py-6 text-sm text-muted-foreground"
@@ -113,7 +114,7 @@ function ChartLoading() {
       >
         <path d="M21 12a9 9 0 1 1-6.219-8.56" />
       </svg>
-      Generating chart…
+      {message}
     </div>
   )
 }
@@ -184,17 +185,80 @@ function CodeBlock({ language, text }: { language: string; text: string }) {
   )
 }
 
+// Ask the backend to repair a broken chart spec using an LLM call.
+// Returns the fixed ChartSpec, or throws on failure.
+async function fixChartViaBackend(source: string): Promise<ChartSpec> {
+  const resp = await fetch("/api/v1/siclaw/chart/fix", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ source }),
+  })
+  if (!resp.ok) throw new Error(`chart/fix ${resp.status}`)
+  const data = await resp.json() as { spec?: ChartSpec; error?: string }
+  if (!data.spec) throw new Error(data.error ?? "no spec returned")
+  return data.spec
+}
+
+type ChartFixState =
+  | { kind: "fixing" }
+  | { kind: "fixed"; spec: ChartSpec }
+  | { kind: "failed" }
+
 // Parses the inner text of a ```chart fence into a chart spec. Each <pre>
 // node react-markdown produces is a separate component instance with its own
 // hook state, so useMemo here keys cleanly off the chunk of JSON text — the
 // returned spec is referentially stable as long as the text is unchanged,
 // which lets ChartRenderer's React.memo short-circuit cleanly while the LLM
 // continues streaming prose after the chart fence has closed.
+//
+// When the spec fails to parse after streaming ends, the component runs a
+// two-layer auto-fix without user intervention:
+//   Layer 1 (local, instant): tryRepairChartJson handles common LLM escaping
+//     artifacts (e.g. {\"type\":\"pie\"} → {"type":"pie"}).
+//   Layer 2 (backend LLM, async): POST /api/v1/siclaw/chart/fix sends the
+//     broken source to the portal, which runs a focused LLM call to fix
+//     structural issues and returns a validated ChartSpec.
+// Each ChartFence instance manages its own fix state independently — in a
+// message with multiple charts, a failure in chart 2 does not affect charts
+// 1 and 3.
 function ChartFence({ text }: { text: string }) {
   const isStreaming = useContext(ChartStreamingContext)
   const trimmed = text.trim()
   const spec = useMemo(() => tryParseChartSpec(trimmed), [trimmed])
+  const [fixState, setFixState] = useState<ChartFixState | null>(null)
+  const fixStarted = useRef(false)
+
+  useEffect(() => {
+    // Only attempt auto-fix when: streaming has finished, normal parse failed,
+    // the JSON looks structurally complete (not truncated mid-stream), and we
+    // haven't started a fix attempt yet.
+    if (isStreaming || spec || fixStarted.current || chartSpecLooksIncomplete(trimmed)) return
+    fixStarted.current = true
+
+    // Layer 1: local JSON repair (no network round-trip).
+    const repaired = tryRepairChartJson(trimmed)
+    if (repaired) {
+      const repairedSpec = tryParseChartSpec(repaired)
+      if (repairedSpec) {
+        setFixState({ kind: "fixed", spec: repairedSpec })
+        return
+      }
+    }
+
+    // Layer 2: backend LLM fix.
+    setFixState({ kind: "fixing" })
+    fixChartViaBackend(trimmed)
+      .then(fixedSpec => setFixState({ kind: "fixed", spec: fixedSpec }))
+      .catch(() => setFixState({ kind: "failed" }))
+  }, [isStreaming, spec, trimmed])
+
+  // Normal parse succeeded — fast path.
   if (spec) return <ChartRenderer spec={spec} />
+
+  // Fixed by local repair or backend LLM.
+  if (fixState?.kind === "fixed") return <ChartRenderer spec={fixState.spec} />
+
   // Don't show the red parse-failed box mid-stream — ReactMarkdown re-renders
   // on every token, so an unclosed chart fence would otherwise flash the
   // error box for every chart until streaming finishes. Only treat it as a
@@ -209,7 +273,12 @@ function ChartFence({ text }: { text: string }) {
       />
     )
   }
-  return <ChartParseError source={trimmed} />
+
+  // All fixes exhausted.
+  if (fixState?.kind === "failed") return <ChartParseError source={trimmed} />
+
+  // fixState is null (first render) or "fixing" — show progress indicator.
+  return <ChartLoading message="Auto-fixing chart…" />
 }
 
 function MermaidFence({ text }: { text: string }) {

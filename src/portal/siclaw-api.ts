@@ -3161,4 +3161,111 @@ export function registerSiclawRoutes(router: RestRouter, config: SiclawConfig, c
     res.writeHead(200, { "Content-Type": "application/gzip", "Content-Disposition": "attachment; filename=knowledge.tar.gz" });
     res.end(rows[0].data);
   });
+
+  // ================================================================
+  // Chart auto-fix
+  // ================================================================
+
+  // POST /api/v1/siclaw/chart/fix
+  //
+  // Accepts a broken chart spec string (the raw text inside a ```chart fence
+  // that failed to parse on the frontend) and uses a focused LLM call to
+  // return a corrected ChartSpec. The LLM is instructed to return only the
+  // JSON — no prose, no fences — so the response can be passed directly to
+  // tryParseChartSpec() on the client.
+  //
+  // Uses the same provider/model lookup as ai-security-reviewer: first
+  // available provider + its default model, with temperature=0 so the output
+  // is deterministic. Falls back to a 400 if no provider is configured.
+  router.post(`${P}/chart/fix`, async (req, res) => {
+    const auth = requireAuth(req, config.jwtSecret);
+    if (!auth) { sendJson(res, 401, { error: "Unauthorized" }); return; }
+
+    const body = await parseBody<{ source?: string }>(req);
+    if (!body.source || typeof body.source !== "string") {
+      sendJson(res, 400, { error: "source is required" });
+      return;
+    }
+    const source = body.source.slice(0, 8000); // guard against oversized payloads
+
+    const db = getDb();
+    const [providerRows] = await db.query(
+      "SELECT base_url, api_key, api_type FROM model_providers ORDER BY sort_order ASC LIMIT 1",
+    ) as any;
+    if (providerRows.length === 0) {
+      sendJson(res, 503, { error: "No model provider configured" });
+      return;
+    }
+    const provider = providerRows[0] as { base_url: string; api_key: string | null; api_type: string };
+
+    const [modelRows] = await db.query(
+      `SELECT me.model_id FROM model_entries me
+       JOIN model_providers mp ON mp.id = me.provider_id
+       WHERE mp.base_url = ? AND mp.api_type = ?
+       ORDER BY me.is_default DESC, me.sort_order ASC LIMIT 1`,
+      [provider.base_url, provider.api_type],
+    ) as any;
+    if (modelRows.length === 0) {
+      sendJson(res, 503, { error: "No model entry found for the configured provider" });
+      return;
+    }
+    const modelId = (modelRows[0] as { model_id: string }).model_id;
+
+    const systemPrompt = `You are a JSON repair assistant for chart specifications.
+The user will provide a broken chart spec that failed to parse.
+Valid chart specs have this structure:
+  Pie:  {"type":"pie","data":{"slices":[{"label":"string","value":number},...]},"title":"string","schema_version":1}
+  Bar:  {"type":"bar","data":{"categories":["string",...],"series":[{"name":"string","values":[number,...]},...]},"title":"string","schema_version":1}
+  Line: {"type":"line","data":{"series":[{"name":"string","points":[{"x":number|"string","y":number},...]},...]},"title":"string","schema_version":1}
+Rules:
+- All numeric values (value, values[], y) must be finite numbers, not strings like "35%" or null.
+- categories, series names, and labels must be strings.
+- Return ONLY the corrected JSON object. No markdown fences, no explanation, no text outside the JSON.`;
+
+    const userPrompt = `Fix this broken chart spec and return only the corrected JSON:\n\n${source}`;
+
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (provider.api_key) headers["Authorization"] = `Bearer ${provider.api_key}`;
+
+      const llmResp = await fetch(`${provider.base_url}/chat/completions`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model: modelId,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          temperature: 0,
+          max_tokens: 1024,
+        }),
+        signal: AbortSignal.timeout(20_000),
+      });
+
+      if (!llmResp.ok) {
+        sendJson(res, 502, { error: `LLM API error: ${llmResp.status}` });
+        return;
+      }
+
+      const llmData = await llmResp.json() as { choices?: Array<{ message?: { content?: string } }> };
+      const raw = llmData.choices?.[0]?.message?.content?.trim() ?? "";
+
+      // Strip markdown fences the model might have added despite instructions.
+      const cleaned = raw.replace(/^```(?:json|chart)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
+
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(cleaned);
+      } catch {
+        sendJson(res, 422, { error: "LLM returned non-JSON output", raw: cleaned.slice(0, 500) });
+        return;
+      }
+
+      sendJson(res, 200, { spec: parsed });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      sendJson(res, 502, { error: `LLM call failed: ${msg}` });
+    }
+  });
 }
