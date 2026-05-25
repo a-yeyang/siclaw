@@ -122,6 +122,27 @@ export class SiclawClient {
     return { doneAt, events };
   }
 
+  /** List all agents accessible with the configured JWT. */
+  async listAgents(): Promise<unknown> {
+    const url = `${this.cfg.portalUrl}/api/v1/siclaw/agents?page_size=100`;
+    const res = await fetch(url, { headers: this.authHeaders() });
+    if (!res.ok) throw new Error(`listAgents failed: HTTP ${res.status}`);
+    return res.json();
+  }
+
+  /** Fetch one page of messages for an eval session (proxied to Portal). */
+  async getSessionMessages(
+    agentId: string,
+    sessionId: string,
+    page = 1,
+    pageSize = 200,
+  ): Promise<unknown> {
+    const url = `${this.cfg.portalUrl}/api/v1/siclaw/agents/${encodeURIComponent(agentId)}/chat/sessions/${encodeURIComponent(sessionId)}/messages?page=${page}&page_size=${pageSize}`;
+    const res = await fetch(url, { headers: this.authHeaders() });
+    if (!res.ok) throw new Error(`getSessionMessages failed: HTTP ${res.status}`);
+    return res.json();
+  }
+
   private authHeaders(extra: Record<string, string> = {}): Record<string, string> {
     return {
       Authorization: `Bearer ${this.cfg.jwt}`,

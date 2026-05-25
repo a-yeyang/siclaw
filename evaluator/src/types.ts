@@ -115,6 +115,8 @@ export type RunStatus =
 export interface RunReport {
   runId: string;
   caseId: string;
+  /** Actual agent UUID used for this run (may differ from case default if overridden). */
+  agentId: string | null;
   status: RunStatus;
   startedAt: string;
   finishedAt: string | null;

@@ -38,7 +38,7 @@
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 14px 24px;
+      padding: 12px 24px;
       background: var(--surface);
       border-bottom: 1px solid var(--border);
       position: sticky;
@@ -56,14 +56,33 @@
       font-size: 12px;
       color: var(--muted);
     }
-    .dot {
-      width: 8px; height: 8px;
-      border-radius: 50%;
-      background: var(--border);
-      transition: background .3s;
-    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); transition: background .3s; }
     .dot.ok  { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
     .dot.err { background: var(--err); }
+
+    /* ── Agent bar ── */
+    .agent-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 24px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+    }
+    .agent-bar .lbl { color: var(--muted); white-space: nowrap; }
+    .agent-bar select { min-width: 260px; font-size: 12px; padding: 4px 10px; }
+    .agent-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 8px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .agent-badge .model { color: var(--accent-h); }
 
     /* ── Tabs ── */
     nav {
@@ -75,20 +94,16 @@
     }
     .tab {
       padding: 10px 16px;
-      background: none;
-      border: none;
+      background: none; border: none;
       border-bottom: 2px solid transparent;
-      color: var(--muted);
-      font-size: 13px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: color .15s;
+      color: var(--muted); font-size: 13px; font-weight: 500;
+      cursor: pointer; transition: color .15s;
     }
     .tab:hover { color: var(--text); }
     .tab.active { color: var(--accent-h); border-bottom-color: var(--accent); }
 
     /* ── Layout ── */
-    main { padding: 24px; max-width: 1160px; }
+    main { padding: 24px; max-width: 1200px; }
     .pane { display: none; }
     .pane.active { display: block; }
 
@@ -96,43 +111,34 @@
     .btn {
       display: inline-flex; align-items: center; gap: 6px;
       padding: 6px 14px;
-      background: var(--accent);
-      color: #fff;
+      background: var(--accent); color: #fff;
       border: none; border-radius: var(--r);
       font-size: 13px; font-weight: 500;
-      cursor: pointer;
-      transition: background .15s, opacity .15s;
+      cursor: pointer; transition: background .15s, opacity .15s;
       white-space: nowrap;
     }
     .btn:hover { background: var(--accent-h); }
     .btn:disabled { opacity: .45; cursor: not-allowed; pointer-events: none; }
     .btn-ghost {
-      background: transparent;
-      color: var(--muted);
+      background: transparent; color: var(--muted);
       border: 1px solid var(--border);
     }
     .btn-ghost:hover { background: var(--surface2); color: var(--text); }
     .btn-sm { padding: 4px 10px; font-size: 12px; }
-    .btn-danger { background: #6e1c1c; }
-    .btn-danger:hover { background: var(--err); }
+    .btn-danger { background: #6e1c1c; color: #ffa198; }
+    .btn-danger:hover { background: var(--err); color: #fff; }
 
     /* ── Cards ── */
     .card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--r);
-      padding: 16px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 16px;
     }
 
     /* ── Badges ── */
     .badge {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 9999px;
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: .04em;
-      text-transform: uppercase;
+      display: inline-block; padding: 2px 8px;
+      border-radius: 9999px; font-size: 11px; font-weight: 600;
+      letter-spacing: .04em; text-transform: uppercase;
     }
     .s-queued,.s-injecting,.s-waiting_propagation,
     .s-triggering,.s-running_agent,.s-evaluating,.s-recovering
@@ -145,13 +151,10 @@
     .tbl-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
     table { width: 100%; border-collapse: collapse; }
     th {
-      text-align: left;
-      font-size: 11px; font-weight: 600;
+      text-align: left; font-size: 11px; font-weight: 600;
       text-transform: uppercase; letter-spacing: .06em;
-      color: var(--muted);
-      padding: 9px 14px;
-      border-bottom: 1px solid var(--border);
-      background: var(--surface);
+      color: var(--muted); padding: 9px 14px;
+      border-bottom: 1px solid var(--border); background: var(--surface);
     }
     td { padding: 11px 14px; border-bottom: 1px solid var(--border); font-size: 13px; }
     tr:last-child td { border-bottom: none; }
@@ -168,25 +171,14 @@
 
     /* ── Detail panel ── */
     .detail {
-      margin-top: 14px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--r);
-      overflow: hidden;
+      margin-top: 14px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: var(--r); overflow: hidden;
     }
-    .detail-scores {
-      padding: 16px;
-      border-bottom: 1px solid var(--border);
-    }
+    .detail-scores { padding: 16px; border-bottom: 1px solid var(--border); }
     .detail pre {
-      padding: 16px;
-      font-family: var(--mono);
-      font-size: 12px;
-      line-height: 1.65;
-      overflow-x: auto;
-      white-space: pre-wrap;
-      word-break: break-all;
-      color: var(--muted);
+      padding: 16px; font-family: var(--mono); font-size: 12px;
+      line-height: 1.65; overflow-x: auto;
+      white-space: pre-wrap; word-break: break-all; color: var(--muted);
     }
     .detail pre .line-sep   { color: #404859; }
     .detail pre .line-head  { color: var(--accent-h); font-weight: bold; }
@@ -195,9 +187,26 @@
     .detail pre .line-warn  { color: var(--warn); }
     .detail pre .line-num   { color: var(--info); }
 
+    /* ── Sub-tabs inside detail ── */
+    .sub-tabs {
+      display: flex; gap: 0;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .sub-tab {
+      padding: 8px 16px; background: none; border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--muted); font-size: 12px; font-weight: 500;
+      cursor: pointer; transition: color .15s;
+    }
+    .sub-tab:hover { color: var(--text); }
+    .sub-tab.active { color: var(--accent-h); border-bottom-color: var(--accent); }
+    .sub-pane { display: none; }
+    .sub-pane.active { display: block; }
+
     /* ── Case grid ── */
     .case-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
-    .case-card { border: 1px solid var(--border); border-radius: var(--r); padding: 16px; background: var(--surface); }
+    .case-card { border: 1px solid var(--border); border-radius: var(--r); padding: 16px; background: var(--surface); position: relative; }
     .case-card:hover { border-color: var(--accent); }
     .case-id { font-family: var(--mono); font-size: 13px; font-weight: 600; }
     .case-title { font-size: 12px; color: var(--muted); margin: 4px 0 10px; }
@@ -206,43 +215,24 @@
 
     /* ── Upload panel ── */
     textarea {
-      width: 100%;
-      min-height: 200px;
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: var(--r);
-      color: var(--text);
-      font-family: var(--mono);
-      font-size: 12px;
-      padding: 12px;
-      resize: vertical;
-      outline: none;
-      line-height: 1.6;
+      width: 100%; min-height: 200px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: var(--r); color: var(--text);
+      font-family: var(--mono); font-size: 12px;
+      padding: 12px; resize: vertical; outline: none; line-height: 1.6;
     }
     textarea:focus { border-color: var(--accent); }
 
     /* ── Select ── */
     select {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: var(--r);
-      color: var(--text);
-      padding: 6px 12px;
-      font-size: 13px;
-      cursor: pointer;
-      outline: none;
-      min-width: 180px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: var(--r); color: var(--text);
+      padding: 6px 12px; font-size: 13px; cursor: pointer; outline: none; min-width: 180px;
     }
     select:focus { border-color: var(--accent); }
 
     /* ── Alerts ── */
-    .alert {
-      padding: 10px 14px;
-      border-radius: var(--r);
-      font-size: 13px;
-      margin-bottom: 12px;
-      animation: fadeIn .2s;
-    }
+    .alert { padding: 10px 14px; border-radius: var(--r); font-size: 13px; margin-bottom: 12px; animation: fadeIn .2s; }
     .alert-ok   { background:#0f2d1f; color:#7ee787; border:1px solid #196c2e; }
     .alert-err  { background:#2d0f0f; color:#ffa198; border:1px solid #6e1c1c; }
     .alert-info { background:#0d2040; color:#79c0ff; border:1px solid #1158c7; }
@@ -253,6 +243,97 @@
     .stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 16px; }
     .stat .v { font-size: 28px; font-weight: 700; color: var(--accent-h); font-family: var(--mono); line-height: 1; }
     .stat .l { font-size: 11px; color: var(--muted); margin-top: 6px; text-transform: uppercase; letter-spacing: .06em; }
+
+    /* ── Chat messages ── */
+    .messages-wrap {
+      padding: 14px;
+      max-height: 520px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .msg { display: flex; gap: 10px; align-items: flex-start; max-width: 100%; }
+    .msg-avatar {
+      width: 28px; height: 28px; border-radius: 50%;
+      flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700;
+    }
+    .avatar-user { background: #1d3566; color: var(--info); }
+    .avatar-agent { background: #1d2a1d; color: var(--ok); }
+    .avatar-tool  { background: #2a1d2a; color: #d2a8ff; }
+    .msg-body { flex: 1; min-width: 0; }
+    .msg-role { font-size: 11px; color: var(--muted); margin-bottom: 4px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+    .msg-bubble {
+      padding: 10px 13px; border-radius: 8px;
+      font-size: 13px; line-height: 1.55;
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .bubble-user  { background: #0d2040; color: #c9d1d9; border: 1px solid #1158c7; }
+    .bubble-agent { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+    .bubble-tool  {
+      background: #160d24; border: 1px solid #3d2359;
+      font-family: var(--mono); font-size: 12px; color: #d2a8ff;
+    }
+    .tool-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+    .tool-name-badge {
+      padding: 2px 7px; border-radius: 4px;
+      background: #2a1d3a; border: 1px solid #6e40c9;
+      font-size: 11px; color: #d2a8ff;
+    }
+    .skill-name-badge {
+      padding: 2px 7px; border-radius: 4px;
+      background: #0f2d1f; border: 1px solid #196c2e;
+      font-size: 11px; color: var(--ok); font-weight: 600;
+    }
+    .outcome-ok   { color: var(--ok); }
+    .outcome-err  { color: var(--err); }
+    .outcome-unk  { color: var(--muted); }
+    .tool-duration { font-size: 10px; color: var(--muted); }
+    .tool-args { color: #8b949e; font-size: 11px; overflow-x: auto; }
+
+    /* ── Skill chips (live timeline) ── */
+    .skill-chips-wrap {
+      display: flex; flex-wrap: wrap; gap: 6px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      min-height: 36px;
+      background: var(--bg);
+    }
+    .skill-chips-label { font-size: 11px; color: var(--muted); align-self: center; white-space: nowrap; margin-right: 4px; }
+    .skill-chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 9px; border-radius: 4px;
+      font-size: 11px; font-family: var(--mono); font-weight: 600;
+    }
+    .chip-ok   { background: #0f2d1f; color: var(--ok);   border: 1px solid #196c2e; }
+    .chip-err  { background: #2d0f0f; color: var(--err);  border: 1px solid #6e1c1c; }
+    .chip-run  { background: #0d2040; color: var(--info); border: 1px solid #1158c7; }
+    .chip-unk  { background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
+
+    /* ── Phase indicator ── */
+    .phase-bar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 14px; font-size: 12px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface2);
+    }
+    .phase-label { color: var(--muted); }
+    .phase-value { color: var(--info); font-weight: 600; }
+
+    /* ── Agents list (settings) ── */
+    .agent-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; }
+    .agent-card {
+      border: 1px solid var(--border); border-radius: var(--r);
+      padding: 14px; background: var(--surface);
+      cursor: pointer; transition: border-color .15s;
+    }
+    .agent-card:hover { border-color: var(--accent); }
+    .agent-card.selected { border-color: var(--ok); background: #0a1f12; }
+    .agent-name { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+    .agent-model { font-size: 12px; color: var(--accent-h); font-family: var(--mono); }
+    .agent-id-txt { font-size: 10px; color: var(--muted); font-family: var(--mono); margin-top: 4px; }
+    .agent-tick { float: right; color: var(--ok); font-size: 16px; }
 
     /* ── Misc helpers ── */
     .row { display: flex; align-items: center; gap: 10px; }
@@ -269,14 +350,10 @@
     /* ── Spinner ── */
     @keyframes spin { to { transform:rotate(360deg); } }
     .spin {
-      display: inline-block;
-      width: 12px; height: 12px;
-      border: 2px solid var(--border);
-      border-top-color: var(--accent);
-      border-radius: 50%;
-      animation: spin .7s linear infinite;
-      vertical-align: middle;
-      margin-left: 4px;
+      display: inline-block; width: 12px; height: 12px;
+      border: 2px solid var(--border); border-top-color: var(--accent);
+      border-radius: 50%; animation: spin .7s linear infinite;
+      vertical-align: middle; margin-left: 4px;
     }
 
     /* ── Empty state ── */
@@ -300,10 +377,24 @@
   </div>
 </header>
 
+<!-- Agent selector bar (always visible) -->
+<div class="agent-bar">
+  <span class="lbl">▶ Run as agent:</span>
+  <select id="agent-select" onchange="onAgentChange()">
+    <option value="">Loading agents…</option>
+  </select>
+  <span id="agent-info" class="agent-badge" style="display:none">
+    <span class="model" id="agent-info-model"></span>
+    <span id="agent-info-id"></span>
+  </span>
+  <button class="btn btn-ghost btn-sm" onclick="loadAgents()" style="margin-left:4px">↻</button>
+</div>
+
 <nav>
   <button class="tab active" data-tab="cases">📋 Cases</button>
   <button class="tab" data-tab="runs">▶ Runs</button>
   <button class="tab" data-tab="metrics">📊 Metrics</button>
+  <button class="tab" data-tab="settings">⚙ Agents</button>
 </nav>
 
 <main>
@@ -319,7 +410,6 @@
     </div>
     <div id="cases-alert"></div>
 
-    <!-- upload form (hidden by default) -->
     <div id="up-panel" style="display:none" class="card mb-16">
       <div class="sec-label">Paste Case YAML</div>
       <textarea id="yaml-input" placeholder="id: my-case-001&#10;title: &quot;My test case&quot;&#10;fault:&#10;  injector: image_pull_failure&#10;  ..."></textarea>
@@ -354,6 +444,7 @@
           <tr>
             <th>Run ID</th>
             <th>Case</th>
+            <th>Agent</th>
             <th>Status</th>
             <th>TTL</th>
             <th>Skill Score</th>
@@ -361,7 +452,7 @@
           </tr>
         </thead>
         <tbody id="runs-body">
-          <tr><td colspan="6" class="empty" style="text-align:center">No runs yet</td></tr>
+          <tr><td colspan="7" class="empty" style="text-align:center">No runs yet</td></tr>
         </tbody>
       </table>
     </div>
@@ -379,18 +470,44 @@
     </div>
   </section>
 
+  <!-- ── SETTINGS / AGENTS ── -->
+  <section id="pane-settings" class="pane">
+    <div class="row-between mb-16">
+      <div class="sec-label" style="margin:0">Available Agents</div>
+      <button class="btn btn-ghost btn-sm" onclick="loadAgents()">↻ Refresh</button>
+    </div>
+    <p class="muted text-sm mb-16">
+      Select which agent to use for evaluation runs. Selection is saved in your browser and overrides the agent UUID in the case YAML.
+      This lets you re-test after an agentbox rebuild without editing the YAML.
+    </p>
+    <div id="agents-alert"></div>
+    <div id="agent-list" class="agent-list">
+      <div class="empty" style="grid-column:1/-1">
+        <div class="ico">🤖</div><div>Loading agents…</div>
+      </div>
+    </div>
+  </section>
+
 </main>
 
 <script>
-// ── state ────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
+// State
+// ────────────────────────────────────────────────────────────────────────────
 const S = {
-  cases:    [],      // Case[]
-  runs:     {},      // runId → RunReport
-  selRun:   null,    // selected runId for detail panel
-  timers:   {},      // runId → intervalId
+  cases:      [],
+  runs:       {},        // runId → RunReport
+  selRun:     null,
+  timers:     {},        // runId → intervalId (polling)
+  msgTimers:  {},        // runId → intervalId (message polling)
+  agents:     [],        // Agent[] from Portal
+  selAgent:   localStorage.getItem('eval-agent') || '',
+  liveMessages: {},      // runId → { messages, selTab }
 };
 
-// ── API ──────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
+// API helpers
+// ────────────────────────────────────────────────────────────────────────────
 async function req(method, path, body) {
   const opts = { method, headers: {} };
   if (body !== undefined) {
@@ -405,38 +522,119 @@ async function req(method, path, body) {
   try { return JSON.parse(txt); } catch { return txt; }
 }
 
-// ── health ───────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
+// Health
+// ────────────────────────────────────────────────────────────────────────────
 async function checkHealth() {
   const dot = document.getElementById('dot');
   const lbl = document.getElementById('health-lbl');
   try {
     await req('GET', '/healthz');
-    dot.className = 'dot ok';
-    lbl.textContent = 'online';
+    dot.className = 'dot ok'; lbl.textContent = 'online';
   } catch {
-    dot.className = 'dot err';
-    lbl.textContent = 'unreachable';
+    dot.className = 'dot err'; lbl.textContent = 'unreachable';
   }
 }
 checkHealth();
 setInterval(checkHealth, 30_000);
 
-// ── tabs ─────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
+// Tabs
+// ────────────────────────────────────────────────────────────────────────────
 document.querySelectorAll('.tab').forEach(btn => {
   btn.onclick = () => {
     const t = btn.dataset.tab;
     document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b === btn));
     document.querySelectorAll('.pane').forEach(p =>
       p.classList.toggle('active', p.id === `pane-${t}`));
-    if (t === 'metrics') loadMetrics();
-    if (t === 'runs')    syncRunSelect();
+    if (t === 'metrics')  loadMetrics();
+    if (t === 'runs')     syncRunSelect();
+    if (t === 'settings') renderAgentList();
   };
 });
-function gotoTab(t) {
-  document.querySelector(`.tab[data-tab="${t}"]`).click();
+function gotoTab(t) { document.querySelector(`.tab[data-tab="${t}"]`).click(); }
+
+// ────────────────────────────────────────────────────────────────────────────
+// Agents
+// ────────────────────────────────────────────────────────────────────────────
+async function loadAgents() {
+  try {
+    const body = await req('GET', '/agents');
+    // Portal may return { agents: [...] } or { data: [...] }
+    const list = body.agents ?? body.data ?? (Array.isArray(body) ? body : []);
+    S.agents = list;
+    buildAgentSelect();
+    renderAgentList();
+    updateAgentBar();
+  } catch (e) {
+    alert_('agents-alert', 'err', `Failed to load agents: ${e.message}`);
+    const sel = document.getElementById('agent-select');
+    sel.innerHTML = '<option value="">Failed to load — check Portal connection</option>';
+  }
 }
 
-// ── cases ────────────────────────────────────────────────────────────
+function buildAgentSelect() {
+  const sel = document.getElementById('agent-select');
+  sel.innerHTML = '<option value="">Use case default agent</option>' +
+    S.agents.map(a => {
+      const model = agentModel(a);
+      const label = `${a.name || a.id}${model ? '  —  ' + model : ''}`;
+      return `<option value="${esc(a.id)}"${a.id === S.selAgent ? ' selected' : ''}>${esc(label)}</option>`;
+    }).join('');
+}
+
+function renderAgentList() {
+  const el = document.getElementById('agent-list');
+  if (!S.agents.length) {
+    el.innerHTML = `<div class="empty" style="grid-column:1/-1">
+      <div class="ico">🤖</div><div>No agents found. Check Portal connection.</div></div>`;
+    return;
+  }
+  el.innerHTML = S.agents.map(a => {
+    const model = agentModel(a);
+    const sel = a.id === S.selAgent;
+    return `<div class="agent-card${sel ? ' selected' : ''}" onclick="selectAgent('${esc(a.id)}')">
+      ${sel ? '<span class="agent-tick">✓</span>' : ''}
+      <div class="agent-name">${esc(a.name || '(unnamed)')}</div>
+      ${model ? `<div class="agent-model">${esc(model)}</div>` : ''}
+      <div class="agent-id-txt">${esc(a.id)}</div>
+    </div>`;
+  }).join('');
+}
+
+function selectAgent(id) {
+  S.selAgent = id;
+  localStorage.setItem('eval-agent', id);
+  buildAgentSelect();
+  renderAgentList();
+  updateAgentBar();
+}
+
+function onAgentChange() {
+  const val = document.getElementById('agent-select').value;
+  selectAgent(val);
+}
+
+function updateAgentBar() {
+  const info = document.getElementById('agent-info');
+  if (!S.selAgent) { info.style.display = 'none'; return; }
+  const a = S.agents.find(x => x.id === S.selAgent);
+  if (!a) { info.style.display = 'none'; return; }
+  const model = agentModel(a);
+  document.getElementById('agent-info-model').textContent = model || 'unknown model';
+  document.getElementById('agent-info-id').textContent = S.selAgent.slice(0, 8) + '…';
+  info.style.display = '';
+}
+
+function agentModel(a) {
+  // Try common field names from Portal
+  return a.model_name || a.config?.model_name || a.config?.model ||
+         a.llm_model || a.model || '';
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Cases
+// ────────────────────────────────────────────────────────────────────────────
 async function loadCases() {
   try {
     const { cases } = await req('GET', '/cases');
@@ -457,16 +655,30 @@ function renderCases() {
     <div class="case-card">
       <div class="row-between mb-8">
         <div class="case-id">${esc(c.id)}</div>
-        <button class="btn btn-sm" onclick="quickRun('${esc(c.id)}')">▶ Run</button>
+        <div class="row" style="gap:6px">
+          <button class="btn btn-sm" onclick="quickRun('${esc(c.id)}')">▶ Run</button>
+          <button class="btn btn-ghost btn-sm btn-danger" onclick="deleteCase('${esc(c.id)}',event)" title="Delete case">🗑</button>
+        </div>
       </div>
       <div class="case-title">${esc(c.title)}</div>
       <div class="case-meta">
-        <div>Injector</div>  <div><span>${esc(c.fault?.injector ?? '—')}</span></div>
-        <div>Propagation</div><div><span>${c.fault?.propagation_wait_sec ?? 0}s</span></div>
-        <div>Budget</div>    <div><span>${c.budget?.ttl_sec ?? '?'}s / ${(c.budget?.max_tokens ?? 0).toLocaleString()} tok</span></div>
-        <div>Must use</div>  <div><span style="font-size:11px">${mustUseLabel(c)}</span></div>
+        <div>Injector</div>    <div><span>${esc(c.fault?.injector ?? '—')}</span></div>
+        <div>Propagation</div> <div><span>${c.fault?.propagation_wait_sec ?? 0}s</span></div>
+        <div>Budget</div>      <div><span>${c.budget?.ttl_sec ?? '?'}s / ${(c.budget?.max_tokens ?? 0).toLocaleString()} tok</span></div>
+        <div>Must use</div>    <div><span style="font-size:11px">${mustUseLabel(c)}</span></div>
+        <div>Agent (YAML)</div><div><span class="mono" style="font-size:10px">${esc((c.trigger?.agent ?? '').slice(0,8))}…</span></div>
       </div>
     </div>`).join('');
+}
+
+async function deleteCase(id, evt) {
+  evt.stopPropagation();
+  if (!confirm(`Delete case "${id}"?`)) return;
+  try {
+    await req('DELETE', `/cases/${encodeURIComponent(id)}`);
+    alert_('cases-alert', 'ok', `Case "${id}" deleted`);
+    await loadCases();
+  } catch (e) { alert_('cases-alert', 'err', `Delete failed: ${e.message}`); }
 }
 
 function hideUpload()  { document.getElementById('up-panel').style.display = 'none'; }
@@ -487,7 +699,9 @@ async function uploadCase() {
   } catch (e) { alert_('cases-alert', 'err', `Upload failed: ${e.message}`); }
 }
 
-// ── runs ─────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
+// Runs
+// ────────────────────────────────────────────────────────────────────────────
 function syncRunSelect() {
   const sel = document.getElementById('sel-case');
   const cur = sel.value;
@@ -510,16 +724,17 @@ async function quickRun(id) {
 
 async function fireRun(caseId) {
   try {
-    const r = await req('POST', `/runs?case=${encodeURIComponent(caseId)}`);
+    let url = `/runs?case=${encodeURIComponent(caseId)}`;
+    if (S.selAgent) url += `&agent=${encodeURIComponent(S.selAgent)}`;
+    const r = await req('POST', url);
     S.runs[r.runId] = r;
     renderRunsTable();
-    poll(r.runId);
-    alert_('runs-alert', 'info', `Run started — polling for updates…`);
+    pollRun(r.runId);
+    alert_('runs-alert', 'info', `Run queued — polling for updates…`);
   } catch (e) { alert_('runs-alert', 'err', `Failed: ${e.message}`); }
 }
 
 async function refreshRuns() {
-  // Reload in-progress runs
   const ids = Object.keys(S.runs).filter(id => !terminal(S.runs[id]?.status));
   await Promise.all(ids.map(fetchRun));
   renderRunsTable();
@@ -528,38 +743,47 @@ async function refreshRuns() {
 async function fetchRun(runId) {
   try {
     const r = await req('GET', `/runs/${runId}`);
-    // The server rewrites pending-xxx → real UUID once the engine picks it up
     if (r.runId && r.runId !== runId) {
       delete S.runs[runId];
       if (S.selRun === runId) S.selRun = r.runId;
     }
     S.runs[r.runId ?? runId] = r;
-    if (terminal(r.status)) stopPoll(runId);
+    if (terminal(r.status)) { stopPollRun(runId); stopPollMsgs(runId); }
     renderRunsTable();
     const active = S.selRun === runId || S.selRun === r.runId;
     if (active) renderDetail(r.runId ?? runId);
   } catch { /* network blip */ }
 }
 
-function poll(runId) {
-  stopPoll(runId);
+function pollRun(runId) {
+  stopPollRun(runId);
   S.timers[runId] = setInterval(() => fetchRun(runId), 2_500);
 }
-function stopPoll(runId) {
-  clearInterval(S.timers[runId]);
-  delete S.timers[runId];
+function stopPollRun(runId) { clearInterval(S.timers[runId]); delete S.timers[runId]; }
+
+function pollMessages(runId) {
+  stopPollMsgs(runId);
+  fetchMessages(runId);
+  S.msgTimers[runId] = setInterval(() => fetchMessages(runId), 3_000);
 }
-function terminal(s) {
-  return s === 'completed' || s === 'failed' || s === 'timed_out';
+function stopPollMsgs(runId) { clearInterval(S.msgTimers[runId]); delete S.msgTimers[runId]; }
+
+async function fetchMessages(runId) {
+  try {
+    const body = await req('GET', `/runs/${runId}/messages`);
+    const msgs = body.data ?? body.messages ?? [];
+    S.liveMessages[runId] = msgs;
+    if (S.selRun === runId) renderChatTab(runId);
+  } catch { /* ignore */ }
 }
+
+function terminal(s) { return s === 'completed' || s === 'failed' || s === 'timed_out'; }
 
 function renderRunsTable() {
   const body = document.getElementById('runs-body');
-  const list = Object.values(S.runs).sort(
-    (a, b) => new Date(b.startedAt) - new Date(a.startedAt)
-  );
+  const list = Object.values(S.runs).sort((a, b) => new Date(b.startedAt) - new Date(a.startedAt));
   if (!list.length) {
-    body.innerHTML = `<tr><td colspan="6" class="empty" style="text-align:center">No runs yet</td></tr>`;
+    body.innerHTML = `<tr><td colspan="7" class="empty" style="text-align:center">No runs yet</td></tr>`;
     return;
   }
   body.innerHTML = list.map(r => {
@@ -569,9 +793,11 @@ function renderRunsTable() {
       : `<span class="muted">—</span>`;
     const live = !terminal(r.status);
     const sel  = r.runId === S.selRun ? 'sel' : '';
+    const agentShort = r.agentId ? r.agentId.slice(0,8) + '…' : '—';
     return `<tr class="clickable ${sel}" onclick="selectRun('${esc(r.runId)}')">
       <td class="mono text-sm">${esc(r.runId.slice(0,8))}…${live ? '<span class="spin"></span>' : ''}</td>
       <td>${esc(r.caseId)}</td>
+      <td class="mono text-sm muted">${esc(agentShort)}</td>
       <td><span class="badge s-${esc(r.status)}">${esc(r.status.replace(/_/g,' '))}</span></td>
       <td class="muted">${r.metrics?.ttl_ms != null ? fmtMs(r.metrics.ttl_ms) : '—'}</td>
       <td>${scHtml}</td>
@@ -583,66 +809,232 @@ function renderRunsTable() {
 function selectRun(id) {
   S.selRun = S.selRun === id ? null : id;
   renderRunsTable();
-  if (S.selRun) renderDetail(id);
-  else document.getElementById('run-detail').innerHTML = '';
-}
-
-async function renderDetail(runId) {
-  const panel = document.getElementById('run-detail');
-  panel.innerHTML = `<div class="detail"><pre class="muted">Loading report…</pre></div>`;
-  try {
-    const [r, txt] = await Promise.all([
-      req('GET', `/runs/${runId}`),
-      fetch(`/runs/${runId}?format=text`).then(x => x.text()),
-    ]);
-    S.runs[runId] = r;
-    const sc = r.score;
-    let scoreHtml = '';
-    if (sc) {
-      scoreHtml = `<div class="detail-scores">
-        <div class="sec-label" style="margin-bottom:10px">Score Overview</div>
-        ${sbar('Sufficiency',  sc.sufficiency,  '#3fb950', false)}
-        ${sbar('Necessity',    sc.necessity,    '#58a6ff', false)}
-        ${sbar('Skill Score',  sc.skill_score,  '#818cf8', false)}
-        ${sbar('Noise Ratio',  sc.noise_ratio,  '#d29922', true)}
-        ${sc.missing_must_use.length ? `<div style="margin-top:10px;font-size:12px;color:var(--err)">⚠ Missing must-use: ${esc(sc.missing_must_use.join(', '))}</div>` : ''}
-        ${sc.forbidden_used.length   ? `<div style="font-size:12px;color:var(--err)">✗ Forbidden used: ${esc(sc.forbidden_used.join(', '))}</div>`   : ''}
-      </div>`;
-    }
-    panel.innerHTML = `<div class="detail">${scoreHtml}<pre>${colorReport(txt)}</pre></div>`;
-  } catch (e) {
-    panel.innerHTML = `<div class="detail"><pre style="color:var(--err)">Error: ${esc(e.message)}</pre></div>`;
+  if (S.selRun) {
+    renderDetail(id);
+    const r = S.runs[id];
+    if (r && !terminal(r.status)) pollMessages(id);
+    else fetchMessages(id);
+  } else {
+    document.getElementById('run-detail').innerHTML = '';
   }
 }
 
-function sbar(label, val, color, invertGood) {
-  const pct = Math.round(val * 100);
-  const c = invertGood
-    ? (val < .2 ? '#3fb950' : val < .5 ? '#d29922' : '#f85149')
-    : color;
-  return `<div class="sbar">
-    <div class="lbl">${label}</div>
-    <div class="track"><div class="fill" style="width:${pct}%;background:${c}"></div></div>
-    <div class="num" style="color:${c}">${val.toFixed(4)}</div>
+// ────────────────────────────────────────────────────────────────────────────
+// Run detail panel
+// ────────────────────────────────────────────────────────────────────────────
+async function renderDetail(runId) {
+  const panel = document.getElementById('run-detail');
+  const r = S.runs[runId];
+  if (!r) return;
+
+  const isLive = !terminal(r.status);
+  const curTab = S.liveMessages[runId]?._selTab ?? 'report';
+
+  const sc = r.score;
+  let scoreHtml = '';
+  if (sc) {
+    scoreHtml = `<div class="detail-scores">
+      <div class="sec-label" style="margin-bottom:10px">Score Overview</div>
+      ${sbar('Sufficiency',  sc.sufficiency,  '#3fb950', false)}
+      ${sbar('Necessity',    sc.necessity,    '#58a6ff', false)}
+      ${sbar('Skill Score',  sc.skill_score,  '#818cf8', false)}
+      ${sbar('Noise Ratio',  sc.noise_ratio,  '#d29922', true)}
+      ${sc.missing_must_use?.length ? `<div style="margin-top:10px;font-size:12px;color:var(--err)">⚠ Missing must-use: ${esc(sc.missing_must_use.join(', '))}</div>` : ''}
+      ${sc.forbidden_used?.length   ? `<div style="font-size:12px;color:var(--err)">✗ Forbidden used: ${esc(sc.forbidden_used.join(', '))}</div>`   : ''}
+    </div>`;
+  }
+
+  const phaseHtml = isLive
+    ? `<div class="phase-bar"><span class="phase-label">Phase:</span><span class="phase-value">${esc(r.status.replace(/_/g,' '))}</span><span class="spin"></span></div>`
+    : '';
+
+  panel.innerHTML = `<div class="detail">
+    ${phaseHtml}
+    ${scoreHtml}
+    <div class="sub-tabs">
+      <button class="sub-tab${curTab === 'chat' ? ' active' : ''}" onclick="switchSubTab('${runId}','chat')">💬 Live Chat</button>
+      <button class="sub-tab${curTab === 'report' ? ' active' : ''}" onclick="switchSubTab('${runId}','report')">📝 Report</button>
+    </div>
+    <div id="sub-chat-${runId}" class="sub-pane${curTab === 'chat' ? ' active' : ''}">
+      <div id="skill-chips-${runId}" class="skill-chips-wrap">
+        <span class="skill-chips-label">Skills used:</span>
+        <span class="muted text-sm">none yet</span>
+      </div>
+      <div id="messages-${runId}" class="messages-wrap">
+        <div class="empty" style="padding:24px"><div class="ico">💬</div><div>Waiting for session to start…</div></div>
+      </div>
+    </div>
+    <div id="sub-report-${runId}" class="sub-pane${curTab === 'report' ? ' active' : ''}">
+      <pre class="muted" id="report-pre-${runId}">Loading report…</pre>
+    </div>
   </div>`;
+
+  // Load the text report
+  loadTextReport(runId);
+  // Render whatever messages we already have
+  renderChatTab(runId);
 }
 
-function colorReport(txt) {
-  return txt.split('\n').map(ln => {
-    const e = esc(ln);
-    if (/^─+$/.test(ln))                       return `<span class="line-sep">${e}</span>`;
-    if (/^(EVAL RUN|Case|Status|Score|SCORE|SKILLS|METRICS|TRACE|RCA|RECOMMENDATION)/.test(ln))
-                                                return `<span class="line-head">${e}</span>`;
-    if (/MISSING|FORBIDDEN/.test(ln))           return `<span class="line-err">${e}</span>`;
-    if (/completed|success|hit:/.test(ln))      return `<span class="line-ok">${e}</span>`;
-    if (/failed|error|MISS:/.test(ln))          return `<span class="line-err">${e}</span>`;
-    if (/timed_out|warn/i.test(ln))             return `<span class="line-warn">${e}</span>`;
-    if (/\d+\.\d{4}/.test(ln))                 return `<span class="line-num">${e}</span>`;
-    return e;
-  }).join('\n');
+function switchSubTab(runId, tab) {
+  if (!S.liveMessages[runId]) S.liveMessages[runId] = {};
+  S.liveMessages[runId]._selTab = tab;
+
+  const chatEl   = document.getElementById(`sub-chat-${runId}`);
+  const reportEl = document.getElementById(`sub-report-${runId}`);
+  const tabs = document.querySelectorAll(`#run-detail .sub-tab`);
+  if (!chatEl || !reportEl) return;
+
+  chatEl.classList.toggle('active', tab === 'chat');
+  reportEl.classList.toggle('active', tab === 'report');
+  tabs.forEach(t => {
+    const isChat   = t.textContent.includes('Chat');
+    const isReport = t.textContent.includes('Report');
+    if (isChat)   t.classList.toggle('active', tab === 'chat');
+    if (isReport) t.classList.toggle('active', tab === 'report');
+  });
 }
 
-// ── metrics ──────────────────────────────────────────────────────────
+async function loadTextReport(runId) {
+  const pre = document.getElementById(`report-pre-${runId}`);
+  if (!pre) return;
+  try {
+    const txt = await fetch(`/runs/${runId}?format=text`).then(x => x.text());
+    pre.innerHTML = colorReport(txt);
+  } catch (e) {
+    pre.innerHTML = `<span style="color:var(--err)">Error: ${esc(e.message)}</span>`;
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Chat tab rendering
+// ────────────────────────────────────────────────────────────────────────────
+const SKILL_TOOLS = new Set(['local_script','pod_script','host_script','node_script']);
+
+function renderChatTab(runId) {
+  const msgs = S.liveMessages[runId];
+  const msgList = Array.isArray(msgs) ? msgs : [];
+
+  const chipsEl = document.getElementById(`skill-chips-${runId}`);
+  const msgsEl  = document.getElementById(`messages-${runId}`);
+  if (!chipsEl || !msgsEl) return;
+
+  // Extract skill invocations
+  const skills = msgList.filter(m =>
+    m.role === 'tool' && m.tool_name && SKILL_TOOLS.has(m.tool_name)
+  );
+  let skillInput = {};
+  try {
+    skills.forEach(m => {
+      const inp = typeof m.tool_input === 'string' ? JSON.parse(m.tool_input) : m.tool_input;
+      if (inp?.skill) skillInput[inp.skill] = m.outcome || 'unknown';
+    });
+  } catch {}
+
+  // Render skill chips
+  const chipEntries = Object.entries(skillInput);
+  chipsEl.innerHTML = '<span class="skill-chips-label">Skills used:</span>' + (
+    chipEntries.length
+      ? chipEntries.map(([name, outcome]) => {
+          const cls = outcome === 'success' ? 'chip-ok' : outcome === 'error' ? 'chip-err' : 'chip-unk';
+          const icon = outcome === 'success' ? '✓' : outcome === 'error' ? '✗' : '?';
+          return `<span class="skill-chip ${cls}">${icon} ${esc(name)}</span>`;
+        }).join('')
+      : '<span class="muted text-sm">none yet</span>'
+  );
+
+  // Render messages
+  if (!msgList.length) {
+    const r = S.runs[runId];
+    const waiting = r && !terminal(r.status);
+    msgsEl.innerHTML = `<div class="empty" style="padding:24px">
+      <div class="ico">💬</div>
+      <div>${waiting ? 'Waiting for session to start…' : 'No messages in this session.'}</div>
+    </div>`;
+    return;
+  }
+
+  // Check scroll position before updating (auto-scroll if near bottom)
+  const atBottom = msgsEl.scrollHeight - msgsEl.scrollTop - msgsEl.clientHeight < 80;
+
+  msgsEl.innerHTML = msgList.map(m => renderMessage(m)).join('');
+
+  if (atBottom) msgsEl.scrollTop = msgsEl.scrollHeight;
+}
+
+function renderMessage(m) {
+  const role = m.role ?? 'unknown';
+
+  if (role === 'user') {
+    const content = m.content ?? '';
+    // Strip the [EVAL:...] prefix tag for display
+    const display = content.replace(/^\[EVAL:[^\]]+\]\s*/, '');
+    return `<div class="msg">
+      <div class="msg-avatar avatar-user">U</div>
+      <div class="msg-body">
+        <div class="msg-role">User prompt</div>
+        <div class="msg-bubble bubble-user">${esc(display)}</div>
+      </div>
+    </div>`;
+  }
+
+  if (role === 'assistant' && !m.tool_name) {
+    const content = (m.content ?? '').trim();
+    if (!content) return '';
+    return `<div class="msg">
+      <div class="msg-avatar avatar-agent">A</div>
+      <div class="msg-body">
+        <div class="msg-role">Agent <span class="muted" style="font-weight:400">${fmtDate(m.created_at)}</span></div>
+        <div class="msg-bubble bubble-agent">${esc(content)}</div>
+      </div>
+    </div>`;
+  }
+
+  if (role === 'tool') {
+    let inp = {};
+    try { inp = typeof m.tool_input === 'string' ? JSON.parse(m.tool_input) : (m.tool_input ?? {}); } catch {}
+    const skillName = inp.skill ?? null;
+    const isSkill = m.tool_name && SKILL_TOOLS.has(m.tool_name) && skillName;
+    const outcome = m.outcome ?? 'unknown';
+    const oc = outcome === 'success' ? 'outcome-ok' : outcome === 'error' ? 'outcome-err' : 'outcome-unk';
+    const outcomeIcon = outcome === 'success' ? '✓' : outcome === 'error' ? '✗' : '?';
+    const args = inp.args ?? inp.script ?? null;
+    const dur = m.duration_ms ? `${m.duration_ms}ms` : '';
+
+    return `<div class="msg">
+      <div class="msg-avatar avatar-tool">⚙</div>
+      <div class="msg-body">
+        <div class="msg-role">Tool call <span class="muted" style="font-weight:400">${fmtDate(m.created_at)}</span></div>
+        <div class="msg-bubble bubble-tool">
+          <div class="tool-header">
+            <span class="tool-name-badge">${esc(m.tool_name ?? '?')}</span>
+            ${isSkill ? `<span class="skill-name-badge">skill: ${esc(skillName)}</span>` : ''}
+            <span class="${oc}">${outcomeIcon} ${esc(outcome)}</span>
+            ${dur ? `<span class="tool-duration">${esc(dur)}</span>` : ''}
+          </div>
+          ${args ? `<div class="tool-args">${esc(String(args).slice(0, 300))}</div>` : ''}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // assistant dispatch row (has tool_name but no content) — show compact
+  if (role === 'assistant' && m.tool_name) {
+    return `<div class="msg" style="opacity:.55">
+      <div class="msg-avatar avatar-agent" style="font-size:10px">→</div>
+      <div class="msg-body">
+        <div class="msg-bubble bubble-agent" style="padding:6px 10px;font-size:12px;font-family:var(--mono)">
+          dispatching <strong>${esc(m.tool_name)}</strong>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  return '';
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Metrics
+// ────────────────────────────────────────────────────────────────────────────
 async function loadMetrics() {
   try {
     const m = await req('GET', '/metrics');
@@ -706,7 +1098,9 @@ function renderMetrics(m) {
   document.getElementById('metrics-body').innerHTML = h;
 }
 
-// ── helpers ───────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ────────────────────────────────────────────────────────────────────────────
 function mustUseLabel(c) {
   const list = c.oracle?.must_use_skills ?? [];
   const shown = list.slice(0, 3).join(', ');
@@ -715,24 +1109,48 @@ function mustUseLabel(c) {
 function esc(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
-function fmtMs(ms) {
-  return ms < 1000 ? `${ms}ms` : `${(ms/1000).toFixed(2)}s`;
-}
+function fmtMs(ms) { return ms < 1000 ? `${ms}ms` : `${(ms/1000).toFixed(2)}s`; }
 function fmtDate(iso) {
   if (!iso) return '—';
   return new Date(iso).toLocaleString('zh-CN', { dateStyle:'short', timeStyle:'medium' });
 }
-function scColor(v) {
-  return v >= .8 ? 'var(--ok)' : v >= .5 ? 'var(--warn)' : 'var(--err)';
-}
+function scColor(v) { return v >= .8 ? 'var(--ok)' : v >= .5 ? 'var(--warn)' : 'var(--err)'; }
 function alert_(id, type, msg) {
   const el = document.getElementById(id);
   if (!el) return;
   el.innerHTML = `<div class="alert alert-${type}">${esc(msg)}</div>`;
   setTimeout(() => { if (el) el.innerHTML = ''; }, 6_000);
 }
+function sbar(label, val, color, invertGood) {
+  const pct = Math.round((val ?? 0) * 100);
+  const c = invertGood
+    ? (val < .2 ? '#3fb950' : val < .5 ? '#d29922' : '#f85149')
+    : color;
+  return `<div class="sbar">
+    <div class="lbl">${label}</div>
+    <div class="track"><div class="fill" style="width:${pct}%;background:${c}"></div></div>
+    <div class="num" style="color:${c}">${(val ?? 0).toFixed(4)}</div>
+  </div>`;
+}
+function colorReport(txt) {
+  return txt.split('\n').map(ln => {
+    const e = esc(ln);
+    if (/^─+$/.test(ln))                       return `<span class="line-sep">${e}</span>`;
+    if (/^(EVAL RUN|Case|Status|Score|SCORE|SKILLS|METRICS|TRACE|RCA|RECOMMENDATION)/.test(ln))
+                                                return `<span class="line-head">${e}</span>`;
+    if (/MISSING|FORBIDDEN/.test(ln))           return `<span class="line-err">${e}</span>`;
+    if (/completed|success|hit:/.test(ln))      return `<span class="line-ok">${e}</span>`;
+    if (/failed|error|MISS:/.test(ln))          return `<span class="line-err">${e}</span>`;
+    if (/timed_out|warn/i.test(ln))             return `<span class="line-warn">${e}</span>`;
+    if (/\d+\.\d{4}/.test(ln))                 return `<span class="line-num">${e}</span>`;
+    return e;
+  }).join('\n');
+}
 
-// ── init ─────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
+// Init
+// ────────────────────────────────────────────────────────────────────────────
+loadAgents();
 loadCases();
 </script>
 </body>

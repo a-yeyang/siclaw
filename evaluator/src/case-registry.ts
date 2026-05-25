@@ -22,4 +22,8 @@ export class CaseRegistry {
   has(id: string): boolean {
     return this.cases.has(id);
   }
+
+  delete(id: string): boolean {
+    return this.cases.delete(id);
+  }
 }

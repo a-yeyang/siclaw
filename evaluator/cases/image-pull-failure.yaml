@@ -1,11 +1,16 @@
-# v0 reference case — the simplest possible scenario that siclaw must
-# identify. We deliberately corrupt the agentbox-job-runner deployment image
-# (a non-critical staging deployment in the `siclaw` namespace) and expect
-# siclaw to diagnose the resulting ImagePullBackOff / ErrImagePull state.
+# v0 reference case — ImagePullBackOff scenario.
 #
-# Pre-flight: ensure a Deployment named `eval-image-pull-target` exists in
-# the `siclaw` namespace with a container named `app`. The accompanying
-# bootstrap script at scripts/bootstrap-image-pull-target.sh creates one.
+# Fault: patch eval-image-pull-target's container image to a non-existent
+# registry, causing K8s to report ImagePullBackOff / ErrImagePull on new pods.
+# Recovery: restore original image after the session completes.
+#
+# Oracle philosophy: do NOT lock down the skill path. Siclaw has multiple
+# legitimate routes to this diagnosis (kubectl-get-pods → describe, or
+# checking containerd logs, or inspecting ReplicaSet history). The oracle
+# only verifies the OUTCOME: agent identified image pull failure and named it.
+#
+# Pre-flight: Deployment `eval-image-pull-target` (ns: siclaw, container: app)
+# must exist. bootstrap script: scripts/bootstrap-image-pull-target.sh
 #
 # DO NOT point this at siclaw-portal / siclaw-runtime — breaking them would
 # also break the trigger and trace-read paths.
@@ -24,31 +29,38 @@ fault:
 
 trigger:
   prompt: |
-    There's a pod in the `siclaw` namespace whose deployment is named
-    `eval-image-pull-target`. It's not running. Diagnose the root cause and
-    say exactly which kubernetes failure reason applies.
-  agent: sre-default
+    siclaw namespace 里有一个 Deployment 叫 eval-image-pull-target，
+    它的 pod 现在没有正常运行。请帮我诊断根本原因，
+    告诉我是什么 Kubernetes failure reason。
+  agent: 163b9c85-16e5-4aa2-b40e-573fe7ae8b39
   max_steps: 10
 
 oracle:
-  # Skills that legitimately help diagnose ImagePullBackOff. The exact skill
-  # names depend on what siclaw ships; adjust to the actual catalogue.
-  must_use_skills:
-    - kubectl-get-pods
+  # No must_use — any skill path that reaches the correct diagnosis is valid.
+  # Observed valid paths: kubectl-get-pods → describe, node-logs (containerd),
+  # kubectl-get-rs → describe-rs.
+  must_use_skills: []
   may_use_skills:
+    - kubectl-get-pods
     - kubectl-describe-pod
     - kubectl-get-events
     - kubectl-get-deployment
     - kubectl-logs
-  # Skills that have nothing to do with image-pull issues. If they fire we
-  # know the agent thrashed.
+    - node-logs
+  # Skills with no relevance to image-pull failures — their invocation
+  # indicates the agent is on the wrong track entirely.
   must_not_use_skills:
     - roce-perftest-pod
     - find-node
+  # Accept any of the standard K8s error strings for image pull failure.
   rca_must_contain:
     - "ImagePullBackOff"
+    - "ErrImagePull"
+    - "image pull"
+    - "镜像拉取"
   recommendation_must_contain:
     - "image"
+    - "镜像"
 
 budget:
   ttl_sec: 600

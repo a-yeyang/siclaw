@@ -17,6 +17,7 @@ import { CaseValidationError, loadCaseFromYaml } from "./case-loader.js";
 import type { CaseRegistry } from "./case-registry.js";
 import type { RunEngine } from "./run-engine.js";
 import { renderTextReport } from "./report/text-report.js";
+import type { SiclawClient } from "./siclaw-client.js";
 import type { RunReport } from "./types.js";
 
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "public");
@@ -24,6 +25,7 @@ const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "public")
 export interface ServerDeps {
   cases: CaseRegistry;
   engine: RunEngine;
+  siclaw: SiclawClient;
   port: number;
 }
 
@@ -49,15 +51,27 @@ export function startServer(deps: ServerDeps): { close: () => Promise<void> } {
   async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const { method = "GET", url = "/" } = req;
     const u = new URL(url, "http://localhost");
-    if (method === "GET"  && (u.pathname === "/" || u.pathname === "/index.html")) return serveIndex(res);
-    if (method === "POST" && u.pathname === "/cases") return uploadCase(req, res);
-    if (method === "POST" && u.pathname === "/runs") return startRun(req, res, u);
-    if (method === "GET"  && u.pathname === "/runs") return listRuns(res);
-    if (method === "GET"  && u.pathname.startsWith("/runs/")) return getRun(req, res, u);
-    if (method === "GET"  && u.pathname === "/metrics") return getMetrics(res);
-    if (method === "GET"  && u.pathname === "/cases") return sendJson(res, 200, { cases: deps.cases.list() });
-    if (method === "GET"  && u.pathname === "/healthz") return sendJson(res, 200, { ok: true });
+    if (method === "GET"    && (u.pathname === "/" || u.pathname === "/index.html")) return serveIndex(res);
+    if (method === "POST"   && u.pathname === "/cases")    return uploadCase(req, res);
+    if (method === "DELETE" && u.pathname.startsWith("/cases/")) return deleteCase(res, u);
+    if (method === "POST"   && u.pathname === "/runs")     return startRun(req, res, u);
+    if (method === "GET"    && u.pathname === "/runs")     return listRuns(res);
+    if (method === "GET"    && u.pathname.startsWith("/runs/") && u.pathname.endsWith("/messages"))
+                                                           return getRunMessages(res, u);
+    if (method === "GET"    && u.pathname.startsWith("/runs/")) return getRun(req, res, u);
+    if (method === "GET"    && u.pathname === "/metrics")  return getMetrics(res);
+    if (method === "GET"    && u.pathname === "/cases")    return sendJson(res, 200, { cases: deps.cases.list() });
+    if (method === "GET"    && u.pathname === "/agents")   return getAgents(res);
+    if (method === "GET"    && u.pathname === "/healthz")  return sendJson(res, 200, { ok: true });
     sendJson(res, 404, { error: "not_found" });
+  }
+
+  function deleteCase(res: ServerResponse, u: URL): void {
+    const id = decodeURIComponent(u.pathname.slice("/cases/".length));
+    if (!id) { sendJson(res, 400, { error: "case id required" }); return; }
+    const ok = deps.cases.delete(id);
+    if (!ok) { sendJson(res, 404, { error: `unknown case "${id}"` }); return; }
+    sendJson(res, 200, { deleted: id });
   }
 
   async function uploadCase(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -80,6 +94,7 @@ export function startServer(deps: ServerDeps): { close: () => Promise<void> } {
     if (!caseId) { sendJson(res, 400, { error: "case= query param required" }); return; }
     const c = deps.cases.get(caseId);
     if (!c) { sendJson(res, 404, { error: `unknown case "${caseId}"` }); return; }
+    const agentOverride = u.searchParams.get("agent") ?? undefined;
 
     // Queue this run after any in-flight one so injector state never overlaps.
     let resolveDone: () => void = () => {};
@@ -87,6 +102,7 @@ export function startServer(deps: ServerDeps): { close: () => Promise<void> } {
     const placeholder: RunReport = {
       runId: "(pending)",
       caseId,
+      agentId: agentOverride ?? c.trigger.agent,
       status: "queued",
       startedAt: new Date().toISOString(),
       finishedAt: null,
@@ -99,7 +115,7 @@ export function startServer(deps: ServerDeps): { close: () => Promise<void> } {
     };
     serial = serial.then(async () => {
       try {
-        const r = await deps.engine.runCase(c);
+        const r = await deps.engine.runCase(c, agentOverride);
         placeholder.runId = r.runId;
         Object.assign(placeholder, r);
         // Remap key under the real runId so /runs/:id resolves both before and after.
@@ -131,6 +147,32 @@ export function startServer(deps: ServerDeps): { close: () => Promise<void> } {
       return;
     }
     sendJson(res, 200, rec.report);
+  }
+
+  async function getAgents(res: ServerResponse): Promise<void> {
+    try {
+      const body = await deps.siclaw.listAgents();
+      sendJson(res, 200, body);
+    } catch (err) {
+      sendJson(res, 502, { error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  async function getRunMessages(res: ServerResponse, u: URL): Promise<void> {
+    // URL format: /runs/:id/messages
+    const mid = u.pathname.slice("/runs/".length, -"/messages".length);
+    const rec = runs.get(mid);
+    if (!rec) { sendJson(res, 404, { error: "not_found" }); return; }
+    const { sessionId, agentId } = rec.report;
+    if (!sessionId || !agentId) { sendJson(res, 200, { data: [], total: 0 }); return; }
+    const page = parseInt(u.searchParams.get("page") ?? "1", 10);
+    const pageSize = parseInt(u.searchParams.get("page_size") ?? "200", 10);
+    try {
+      const body = await deps.siclaw.getSessionMessages(agentId, sessionId, page, pageSize);
+      sendJson(res, 200, body);
+    } catch (err) {
+      sendJson(res, 502, { error: err instanceof Error ? err.message : String(err) });
+    }
   }
 
   function getMetrics(res: ServerResponse): void {

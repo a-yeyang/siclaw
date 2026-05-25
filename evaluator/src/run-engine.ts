@@ -30,11 +30,13 @@ export interface RunEngineDeps {
 export class RunEngine {
   constructor(private readonly deps: RunEngineDeps) {}
 
-  async runCase(c: Case): Promise<RunReport> {
+  async runCase(c: Case, agentOverride?: string): Promise<RunReport> {
+    const agentId = agentOverride ?? c.trigger.agent;
     const runId = randomUUID();
     const report: RunReport = {
       runId,
       caseId: c.id,
+      agentId,
       status: "queued",
       startedAt: new Date().toISOString(),
       finishedAt: null,
@@ -71,7 +73,7 @@ export class RunEngine {
       // 3. trigger siclaw
       report.status = "triggering";
       const sessionId = await this.deps.siclaw.createSession(
-        c.trigger.agent,
+        agentId,
         `[EVAL] ${c.id}/${runId.slice(0, 8)}`,
       );
       report.sessionId = sessionId;
@@ -80,7 +82,7 @@ export class RunEngine {
       report.status = "running_agent";
       const sendStart = Date.now();
       await this.deps.siclaw.sendAndWait({
-        agentId: c.trigger.agent,
+        agentId,
         sessionId,
         text: prompt,
         signal: ac.signal,
@@ -89,7 +91,7 @@ export class RunEngine {
 
       // 4. read trace
       report.status = "evaluating";
-      const trace = await this.deps.traceReader.read(c.trigger.agent, sessionId);
+      const trace = await this.deps.traceReader.read(agentId, sessionId);
       report.trace = trace;
       report.metrics = {
         ttl_ms: ttlMs,

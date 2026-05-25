@@ -41,7 +41,7 @@ function main(): void {
   const engine = new RunEngine({ injectors, siclaw, traceReader });
   const cases = new CaseRegistry();
 
-  startServer({ cases, engine, port });
+  startServer({ cases, engine, siclaw, port });
 }
 
 main();
