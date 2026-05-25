@@ -19,6 +19,7 @@ import type { RunEngine } from "./run-engine.js";
 import { renderTextReport } from "./report/text-report.js";
 import type { SiclawClient } from "./siclaw-client.js";
 import type { RunLog } from "./run-log.js";
+import type { TraceDbWriter } from "./trace-db-writer.js";
 import type { RunReport } from "./types.js";
 
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "public");
@@ -28,6 +29,7 @@ export interface ServerDeps {
   engine: RunEngine;
   siclaw: SiclawClient;
   log: RunLog;
+  traceDb: TraceDbWriter | null;
   port: number;
 }
 
@@ -138,6 +140,10 @@ export function startServer(deps: ServerDeps): { close: () => Promise<void> } {
         }
       } finally {
         resolveDone();
+        // Persist completed run to trace DB (non-blocking, errors are swallowed).
+        if (deps.traceDb && placeholder.finishedAt) {
+          deps.traceDb.write(placeholder).catch(() => {});
+        }
       }
     });
     // Register placeholder under a temporary id so the caller can poll. The
