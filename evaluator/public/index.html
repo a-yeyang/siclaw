@@ -627,7 +627,9 @@ function updateAgentBar() {
 }
 
 function agentModel(a) {
-  // Try common field names from Portal
+  // Portal returns model_provider + model_id (e.g. "moonshot" + "Kimi-K2.5")
+  if (a.model_provider && a.model_id) return `${a.model_provider}/${a.model_id}`;
+  // Fallback field names
   return a.model_name || a.config?.model_name || a.config?.model ||
          a.llm_model || a.model || '';
 }

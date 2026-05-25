@@ -124,7 +124,7 @@ export class SiclawClient {
 
   /** List all agents accessible with the configured JWT. */
   async listAgents(): Promise<unknown> {
-    const url = `${this.cfg.portalUrl}/api/v1/siclaw/agents?page_size=100`;
+    const url = `${this.cfg.portalUrl}/api/v1/agents?page_size=100`;
     const res = await fetch(url, { headers: this.authHeaders() });
     if (!res.ok) throw new Error(`listAgents failed: HTTP ${res.status}`);
     return res.json();
