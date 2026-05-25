@@ -9,10 +9,10 @@
  */
 
 export interface FaultSpec {
-  /** Reflective name; an injector with `inject_<this>` + `recover_<this>` must exist. */
-  injector: string;
-  /** Free-form parameters consumed by the named injector. */
-  params: Record<string, unknown>;
+  /** Shell command executed to inject the fault (runs as the evaluator process user). */
+  inject: string;
+  /** Shell command executed to recover (clean up) after the run. */
+  recover: string;
   /** Wait time between injection and triggering siclaw, in seconds. */
   propagation_wait_sec: number;
 }

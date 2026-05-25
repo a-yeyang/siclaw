@@ -14,16 +14,15 @@
  * still runs; the report is marked `timed_out` with whatever trace exists.
  */
 
+import { exec } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { ChatTraceReader } from "./chat-trace-reader.js";
 import { score } from "./evaluator/deterministic.js";
-import type { InjectorRegistry } from "./injectors/registry.js";
 import { buildEvalPrompt, type SiclawClient } from "./siclaw-client.js";
 import type { RunLog } from "./run-log.js";
 import type { Case, RunReport, RunStatus } from "./types.js";
 
 export interface RunEngineDeps {
-  injectors: InjectorRegistry;
   siclaw: SiclawClient;
   traceReader: ChatTraceReader;
   log: RunLog;
@@ -55,7 +54,6 @@ export class RunEngine {
       recovered: false,
     };
 
-    const binding = this.deps.injectors.resolve(c.fault.injector);
     const overallStart = Date.now();
     const budgetMs = c.budget.ttl_sec * 1000;
     const ac = new AbortController();
@@ -67,8 +65,8 @@ export class RunEngine {
     try {
       // 1. inject
       report.status = "injecting";
-      log.append(runId, `Injecting fault: ${c.fault.injector} (params: ${JSON.stringify(c.fault.params)})`);
-      await binding.injector.inject(binding.faultType, c.fault.params);
+      log.append(runId, `Injecting fault — cmd: ${c.fault.inject.trim().split("\n")[0]}…`);
+      await runShell(c.fault.inject, log, runId, ac.signal);
       injected = true;
       log.append(runId, `Fault injected successfully`);
 
@@ -130,8 +128,8 @@ export class RunEngine {
       if (injected) {
         try {
           report.status = report.status === "completed" ? "recovering" : report.status;
-          log.append(runId, `Recovering fault: ${c.fault.injector}`);
-          await binding.injector.recover(binding.faultType, c.fault.params);
+          log.append(runId, `Recovering fault — cmd: ${c.fault.recover.trim().split("\n")[0]}…`);
+          await runShell(c.fault.recover, log, runId, ac.signal);
           report.recovered = true;
           log.append(runId, `Fault recovered — test environment cleaned up`);
           if (report.status === "recovering") report.status = "completed";
@@ -158,6 +156,25 @@ function inferFailureStatus(err: unknown, signal: AbortSignal): RunStatus {
   if (signal.aborted) return "timed_out";
   if (err instanceof Error && err.name === "AbortError") return "timed_out";
   return "failed";
+}
+
+/** Execute a shell command, streaming stdout/stderr into the run log. */
+async function runShell(cmd: string, log: RunLog, runId: string, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) throw new Error("aborted");
+  await new Promise<void>((resolve, reject) => {
+    const child = exec(cmd, { shell: "/bin/sh" }, (err, stdout, stderr) => {
+      if (stdout.trim()) log.append(runId, `[cmd] ${stdout.trim()}`);
+      if (stderr.trim()) log.append(runId, `[cmd stderr] ${stderr.trim()}`, "warn");
+      if (err) reject(new Error(`command failed (exit ${err.code ?? "?"}): ${err.message}`));
+      else resolve();
+    });
+    function onAbort(): void {
+      child.kill();
+      reject(new Error("aborted"));
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+    child.on("close", () => signal.removeEventListener("abort", onAbort));
+  });
 }
 
 async function sleepWithAbort(ms: number, signal: AbortSignal): Promise<void> {

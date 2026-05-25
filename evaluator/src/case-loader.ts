@@ -52,19 +52,10 @@ function parseFault(raw: unknown): FaultSpec {
   if (!isObject(raw)) {
     throw new CaseValidationError("`fault` must be a mapping");
   }
-  const injector = requireString(raw, "fault.injector");
-  if (!/^[a-z][a-z0-9_]*$/.test(injector)) {
-    throw new CaseValidationError(
-      `fault.injector "${injector}" must be snake_case (matches reflective method names)`,
-    );
-  }
-  const params = raw.params == null
-    ? {}
-    : (isObject(raw.params)
-      ? (raw.params as Record<string, unknown>)
-      : (() => { throw new CaseValidationError("fault.params must be a mapping if present"); })());
+  const inject = requireString(raw, "fault.inject");
+  const recover = requireString(raw, "fault.recover");
   const propagation_wait_sec = requireNonNegativeInt(raw, "fault.propagation_wait_sec");
-  return { injector, params, propagation_wait_sec };
+  return { inject, recover, propagation_wait_sec };
 }
 
 function parseTrigger(raw: unknown): TriggerSpec {

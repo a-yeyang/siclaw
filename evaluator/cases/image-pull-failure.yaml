@@ -1,16 +1,13 @@
 # v0 reference case — ImagePullBackOff scenario.
 #
-# Fault: patch eval-image-pull-target's container image to a non-existent
-# registry, causing K8s to report ImagePullBackOff / ErrImagePull on new pods.
-# Recovery: restore original image after the session completes.
+# Fault: create a fresh Deployment with a non-existent image, causing K8s to
+# report ImagePullBackOff / ErrImagePull on the resulting pod.
+# Recovery: delete the Deployment entirely — environment is left clean.
 #
 # Oracle philosophy: do NOT lock down the skill path. Siclaw has multiple
 # legitimate routes to this diagnosis (kubectl-get-pods → describe, or
 # checking containerd logs, or inspecting ReplicaSet history). The oracle
 # only verifies the OUTCOME: agent identified image pull failure and named it.
-#
-# Pre-flight: Deployment `eval-image-pull-target` (ns: siclaw, container: app)
-# must exist. bootstrap script: scripts/bootstrap-image-pull-target.sh
 #
 # DO NOT point this at siclaw-portal / siclaw-runtime — breaking them would
 # also break the trigger and trace-read paths.
@@ -19,12 +16,12 @@ id: image-pull-failure-001
 title: "ImagePullBackOff: agent must identify pull failure and name the failing pod"
 
 fault:
-  injector: image_pull_failure
-  params:
-    namespace: siclaw
-    deployment: eval-image-pull-target
-    container: app
-    # bad_image: "registry.invalid.siclaw-eval/this-image-does-not-exist:fault"
+  inject: |
+    kubectl -n siclaw create deployment eval-image-pull-target \
+      --image=registry.invalid.siclaw-eval/this-image-does-not-exist:fault \
+      --replicas=1 || true
+  recover: |
+    kubectl -n siclaw delete deployment eval-image-pull-target --ignore-not-found=true
   propagation_wait_sec: 30  # enough for the Deployment to roll a fresh ReplicaSet
 
 trigger:

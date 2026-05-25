@@ -1,0 +1,66 @@
+# Harder variant of image-pull-failure-001.
+#
+# Difference: the agent is NOT told which deployment is broken.
+# It must proactively scan the namespace, identify the unhealthy workload,
+# and then diagnose the root cause — a more realistic SRE triage scenario.
+#
+# Oracle philosophy: still no forced skill path. Valid approaches include:
+#   cluster-events → spot Warning events → image-pull-debug
+#   kubectl-get-pods → see ImagePullBackOff → describe pod / node-logs
+#   image-pull-debug (if agent scans for unhealthy pods first)
+#
+# The agent passes if and only if it:
+#   (a) identifies eval-image-pull-target as the failing workload
+#   (b) correctly names the image pull failure as the root cause
+
+id: image-pull-failure-002
+title: "Namespace triage: agent must discover and diagnose the failing workload without being told which one"
+
+fault:
+  inject: |
+    kubectl -n siclaw create deployment eval-image-pull-target \
+      --image=registry.invalid.siclaw-eval/this-image-does-not-exist:fault \
+      --replicas=1 || true
+  recover: |
+    kubectl -n siclaw delete deployment eval-image-pull-target --ignore-not-found=true
+  propagation_wait_sec: 30
+
+trigger:
+  prompt: |
+    siclaw namespace 里有工作负载出现了异常，但我不确定是哪一个。
+    请帮我全面检查一下这个 namespace 里所有工作负载的健康状态，
+    找出所有不正常的 workload，并对每一个给出根本原因分析。
+  agent: 163b9c85-16e5-4aa2-b40e-573fe7ae8b39
+  max_steps: 15
+
+oracle:
+  # No forced skill path — agent may discover the issue via cluster-events,
+  # kubectl-get-pods, image-pull-debug, or any combination.
+  must_use_skills: []
+  may_use_skills:
+    - kubectl-get-pods
+    - kubectl-describe-pod
+    - kubectl-get-events
+    - kubectl-get-deployment
+    - kubectl-logs
+    - node-logs
+    - cluster-events
+    - image-pull-debug
+  # Skills with no relevance to a namespace-wide image-pull triage.
+  must_not_use_skills:
+    - roce-perftest-pod
+    - find-node
+    - volcano-job-diagnose
+  # Agent must name the correct workload in its final answer.
+  rca_must_contain:
+    - "eval-image-pull-target"
+  # And must correctly identify the failure class.
+  recommendation_must_contain:
+    - "ImagePullBackOff"
+    - "ErrImagePull"
+    - "image pull"
+    - "镜像拉取"
+
+budget:
+  ttl_sec: 720
+  max_tokens: 60000
