@@ -58,6 +58,10 @@ export function startServer(deps: ServerDeps): { close: () => Promise<void> } {
     if (method === "DELETE" && u.pathname.startsWith("/cases/")) return deleteCase(res, u);
     if (method === "POST"   && u.pathname === "/runs")     return startRun(req, res, u);
     if (method === "GET"    && u.pathname === "/runs")     return listRuns(res);
+    if (method === "GET"    && u.pathname.startsWith("/runs/") && u.pathname.endsWith("/messages/stream"))
+                                                           return streamRunMessages(req, res, u);
+    if (method === "GET"    && u.pathname.startsWith("/runs/") && u.pathname.endsWith("/log/stream"))
+                                                           return streamRunLog(req, res, u);
     if (method === "GET"    && u.pathname.startsWith("/runs/") && u.pathname.endsWith("/messages"))
                                                            return getRunMessages(res, u);
     if (method === "GET"    && u.pathname.startsWith("/runs/") && u.pathname.endsWith("/log"))
@@ -121,15 +125,17 @@ export function startServer(deps: ServerDeps): { close: () => Promise<void> } {
 
     serial = serial.then(async () => {
       try {
-        const r = await deps.engine.runCase(c, agentOverride);
-        placeholder.runId = r.runId;
-        Object.assign(placeholder, r);
-        // Remap key under the real runId so /runs/:id resolves both before and after.
-        runs.set(r.runId, { report: placeholder, done });
+        // Pass placeholder so engine mutates it in real-time (sessionId, status visible
+        // to SSE streams while the run is still in flight).
+        await deps.engine.runCase(c, agentOverride, placeholder);
+        // placeholder.runId is now the real UUID; register under it too.
+        runs.set(placeholder.runId, { report: placeholder, done });
       } catch (err) {
-        placeholder.status = "failed";
-        placeholder.error = err instanceof Error ? err.message : String(err);
-        placeholder.finishedAt = new Date().toISOString();
+        if (!placeholder.finishedAt) {
+          placeholder.status = "failed";
+          placeholder.error = err instanceof Error ? err.message : String(err);
+          placeholder.finishedAt = new Date().toISOString();
+        }
       } finally {
         resolveDone();
       }
@@ -205,6 +211,75 @@ export function startServer(deps: ServerDeps): { close: () => Promise<void> } {
     } catch {
       sendJson(res, 404, { error: "frontend not found — public/index.html missing" });
     }
+  }
+
+  /** SSE: stream Portal messages for a run in real-time. */
+  async function streamRunMessages(req: IncomingMessage, res: ServerResponse, u: URL): Promise<void> {
+    const mid = u.pathname.slice("/runs/".length, -"/messages/stream".length);
+    const rec = runs.get(mid);
+    if (!rec) { sendJson(res, 404, { error: "not_found" }); return; }
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    res.write(": ping\n\n");
+    let sentCount = 0, closed = false;
+    req.on("close", () => { closed = true; clearInterval(iv); });
+    const iv = setInterval(async () => {
+      if (closed) return;
+      try {
+        const { sessionId, agentId } = rec.report;
+        if (sessionId && agentId) {
+          const body = await deps.siclaw.getSessionMessages(agentId, sessionId, 1, 200);
+          const msgs = ((body as Record<string, unknown[]>).data ??
+            (body as Record<string, unknown[]>).messages ?? []) as unknown[];
+          for (let i = sentCount; i < msgs.length; i++) {
+            if (!closed) res.write(`data: ${JSON.stringify(msgs[i])}\n\n`);
+          }
+          sentCount = msgs.length;
+        }
+      } catch { /* Portal blip — skip */ }
+      if (rec.report.finishedAt && !closed) {
+        closed = true; clearInterval(iv);
+        res.write("event: done\ndata: {}\n\n");
+        res.end();
+      }
+    }, 500);
+  }
+
+  /** SSE: stream evaluator run-log entries in real-time. */
+  function streamRunLog(req: IncomingMessage, res: ServerResponse, u: URL): void {
+    const requestedId = u.pathname.slice("/runs/".length, -"/log/stream".length);
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    res.write(": ping\n\n");
+    let sentCount = 0, closed = false;
+    req.on("close", () => { closed = true; clearInterval(iv); });
+    const iv = setInterval(() => {
+      if (closed) return;
+      const rec = runs.get(requestedId);
+      const actualId = rec?.report.runId;
+      // Merge entries from tempId + real UUID (handles pending→UUID transition).
+      const entries = [
+        ...deps.log.get(requestedId),
+        ...(actualId && actualId !== requestedId ? deps.log.get(actualId) : []),
+      ].sort((a, b) => (a.ts < b.ts ? -1 : 1));
+      for (let i = sentCount; i < entries.length; i++) {
+        if (!closed) res.write(`data: ${JSON.stringify(entries[i])}\n\n`);
+      }
+      sentCount = entries.length;
+      if (rec?.report.finishedAt && !closed) {
+        closed = true; clearInterval(iv);
+        res.write("event: done\ndata: {}\n\n");
+        res.end();
+      }
+    }, 200);
   }
 
   server.listen(deps.port, () => {

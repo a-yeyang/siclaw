@@ -17,9 +17,10 @@ title: "ImagePullBackOff: agent must identify pull failure and name the failing 
 
 fault:
   inject: |
+    kubectl -n siclaw delete deployment eval-image-pull-target --ignore-not-found=true
     kubectl -n siclaw create deployment eval-image-pull-target \
       --image=registry.invalid.siclaw-eval/this-image-does-not-exist:fault \
-      --replicas=1 || true
+      --replicas=1
   recover: |
     kubectl -n siclaw delete deployment eval-image-pull-target --ignore-not-found=true
   propagation_wait_sec: 30  # enough for the Deployment to roll a fresh ReplicaSet

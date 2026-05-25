@@ -31,28 +31,24 @@ export interface RunEngineDeps {
 export class RunEngine {
   constructor(private readonly deps: RunEngineDeps) {}
 
-  async runCase(c: Case, agentOverride?: string): Promise<RunReport> {
+  async runCase(c: Case, agentOverride?: string, liveReport?: RunReport): Promise<RunReport> {
     const agentId = agentOverride ?? c.trigger.agent;
     const runId = randomUUID();
-    const report: RunReport = {
-      runId,
-      caseId: c.id,
-      agentId,
-      status: "queued",
-      startedAt: new Date().toISOString(),
-      finishedAt: null,
-      sessionId: null,
-      trace: null,
-      score: null,
-      metrics: {
-        ttl_ms: null,
-        steps: null,
-        approx_output_tokens: null,
-        approx_input_tokens: null,
-      },
-      error: null,
-      recovered: false,
-    };
+    // Use caller-supplied object so the server can observe live field updates
+    // (e.g. sessionId becomes non-null as soon as the session is created).
+    const report: RunReport = liveReport ?? ({} as RunReport);
+    report.runId = runId;
+    report.caseId = c.id;
+    report.agentId = agentId;
+    report.status = "queued";
+    report.startedAt = new Date().toISOString();
+    report.finishedAt = null;
+    report.sessionId = null;
+    report.trace = null;
+    report.score = null;
+    report.metrics = { ttl_ms: null, steps: null, approx_output_tokens: null, approx_input_tokens: null };
+    report.error = null;
+    report.recovered = false;
 
     const overallStart = Date.now();
     const budgetMs = c.budget.ttl_sec * 1000;
