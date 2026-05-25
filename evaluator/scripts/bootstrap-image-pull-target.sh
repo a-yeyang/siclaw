@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# Creates the `eval-image-pull-target` Deployment in the `siclaw` namespace.
-# Idempotent: re-running is safe. Image is a tiny pausable sleeper so the
-# baseline is healthy until the evaluator injects the bad image.
+# DEPRECATED — no longer needed.
 #
-# Requires: kubectl context pointing at the right cluster, current user has
-# rights to create Deployments in `siclaw`.
+# The image-pull-failure injector now uses a create-and-destroy lifecycle:
+# it creates the target Deployment fresh on inject and deletes it entirely
+# on recover. There is no pre-existing Deployment to bootstrap.
+#
+# Use scripts/bootstrap-rbac.sh to set up the evaluator's RBAC instead.
+echo "DEPRECATED: this script is no longer needed. See bootstrap-rbac.sh." >&2
+exit 0
 
 set -euo pipefail
 

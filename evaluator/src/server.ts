@@ -18,6 +18,7 @@ import type { CaseRegistry } from "./case-registry.js";
 import type { RunEngine } from "./run-engine.js";
 import { renderTextReport } from "./report/text-report.js";
 import type { SiclawClient } from "./siclaw-client.js";
+import type { RunLog } from "./run-log.js";
 import type { RunReport } from "./types.js";
 
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "public");
@@ -26,6 +27,7 @@ export interface ServerDeps {
   cases: CaseRegistry;
   engine: RunEngine;
   siclaw: SiclawClient;
+  log: RunLog;
   port: number;
 }
 
@@ -58,6 +60,8 @@ export function startServer(deps: ServerDeps): { close: () => Promise<void> } {
     if (method === "GET"    && u.pathname === "/runs")     return listRuns(res);
     if (method === "GET"    && u.pathname.startsWith("/runs/") && u.pathname.endsWith("/messages"))
                                                            return getRunMessages(res, u);
+    if (method === "GET"    && u.pathname.startsWith("/runs/") && u.pathname.endsWith("/log"))
+                                                           return getRunLog(res, u);
     if (method === "GET"    && u.pathname.startsWith("/runs/")) return getRun(req, res, u);
     if (method === "GET"    && u.pathname === "/metrics")  return getMetrics(res);
     if (method === "GET"    && u.pathname === "/cases")    return sendJson(res, 200, { cases: deps.cases.list() });
@@ -113,6 +117,8 @@ export function startServer(deps: ServerDeps): { close: () => Promise<void> } {
       error: null,
       recovered: false,
     };
+    deps.log.append(placeholder.runId, `Case ${c.id} queued (agent: ${agentOverride ?? c.trigger.agent})`);
+
     serial = serial.then(async () => {
       try {
         const r = await deps.engine.runCase(c, agentOverride);
@@ -156,6 +162,12 @@ export function startServer(deps: ServerDeps): { close: () => Promise<void> } {
     } catch (err) {
       sendJson(res, 502, { error: err instanceof Error ? err.message : String(err) });
     }
+  }
+
+  function getRunLog(res: ServerResponse, u: URL): void {
+    // URL: /runs/:id/log
+    const id = u.pathname.slice("/runs/".length, -"/log".length);
+    sendJson(res, 200, { entries: deps.log.get(id) });
   }
 
   async function getRunMessages(res: ServerResponse, u: URL): Promise<void> {

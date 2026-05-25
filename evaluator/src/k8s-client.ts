@@ -14,6 +14,8 @@ import {
   type V1Deployment,
 } from "@kubernetes/client-node";
 
+const EVAL_MANAGED_LABEL = "eval.siclaw/managed";
+
 export interface K8sClientOptions {
   /** Only this namespace may be mutated. All injector calls are checked. */
   allowedNamespace: string;
@@ -97,6 +99,67 @@ export class K8sClient {
       throw new Error(`container "${container}" has no image set`);
     }
     return c.image;
+  }
+
+  /** Returns true if the named deployment exists (without throwing on 404). */
+  async deploymentExists(namespace: string, name: string): Promise<boolean> {
+    this.assertNamespace(namespace);
+    try {
+      await this.apps.readNamespacedDeployment({ name, namespace });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Creates a minimal 1-replica Deployment with a single container.
+   * The deployment is tagged with `eval.siclaw/managed=true` so it can be
+   * distinguished from production workloads.
+   */
+  async createDeployment(
+    namespace: string,
+    name: string,
+    containerName: string,
+    image: string,
+  ): Promise<void> {
+    this.assertNamespace(namespace);
+    const body: V1Deployment = {
+      apiVersion: "apps/v1",
+      kind: "Deployment",
+      metadata: {
+        name,
+        namespace,
+        labels: { app: name, [EVAL_MANAGED_LABEL]: "true" },
+      },
+      spec: {
+        replicas: 1,
+        selector: { matchLabels: { app: name } },
+        template: {
+          metadata: { labels: { app: name } },
+          spec: {
+            containers: [{ name: containerName, image }],
+          },
+        },
+      },
+    };
+    await this.apps.createNamespacedDeployment({ namespace, body });
+  }
+
+  /**
+   * Deletes a Deployment. Only permitted on deployments tagged with the
+   * eval-managed label to prevent accidental deletion of production workloads.
+   */
+  async deleteDeployment(namespace: string, name: string): Promise<void> {
+    this.assertNamespace(namespace);
+    const dep = await this.getDeployment(namespace, name);
+    if (dep.metadata?.labels?.[EVAL_MANAGED_LABEL] !== "true") {
+      throw new Error(
+        `Refusing to delete deployment "${name}": missing label ${EVAL_MANAGED_LABEL}=true. ` +
+        `Only evaluator-managed deployments may be deleted.`,
+      );
+    }
+    await this.apps.deleteNamespacedDeployment({ name, namespace });
   }
 
   async listPods(namespace: string, labelSelector?: string) {

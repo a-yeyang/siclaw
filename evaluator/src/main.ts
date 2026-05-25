@@ -1,14 +1,11 @@
 /**
  * Entry point. Wires env config → K8s/Portal clients → engine → HTTP server.
  *
- * Env vars (also documented in README):
+ * Env vars:
  *   EVAL_PORT          (default 8080)
  *   PORTAL_URL         (required)
  *   PORTAL_JWT         (required)
- *   EVAL_NAMESPACE     (default "siclaw" — design §3.1 / §3.4.5)
- *
- * In production the evaluator is a single pod with a tightly-scoped
- * ServiceAccount that can only patch Deployments in EVAL_NAMESPACE.
+ *   EVAL_NAMESPACE     (default "siclaw")
  */
 
 import { CaseRegistry } from "./case-registry.js";
@@ -16,6 +13,7 @@ import { ChatTraceReader } from "./chat-trace-reader.js";
 import { InjectorRegistry } from "./injectors/registry.js";
 import { K8sClient } from "./k8s-client.js";
 import { RunEngine } from "./run-engine.js";
+import { RunLog } from "./run-log.js";
 import { startServer } from "./server.js";
 import { SiclawClient } from "./siclaw-client.js";
 
@@ -38,10 +36,11 @@ function main(): void {
   const injectors = new InjectorRegistry(k8s);
   const siclaw = new SiclawClient({ portalUrl, jwt });
   const traceReader = new ChatTraceReader({ portalUrl, jwt });
-  const engine = new RunEngine({ injectors, siclaw, traceReader });
+  const log = new RunLog();
+  const engine = new RunEngine({ injectors, siclaw, traceReader, log });
   const cases = new CaseRegistry();
 
-  startServer({ cases, engine, siclaw, port });
+  startServer({ cases, engine, siclaw, log, port });
 }
 
 main();

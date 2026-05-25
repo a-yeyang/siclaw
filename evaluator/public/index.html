@@ -6,365 +6,224 @@
   <title>Siclaw Skill Audit Evaluator</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
     :root {
-      --bg:       #0d1117;
-      --surface:  #161b22;
-      --surface2: #21262d;
-      --border:   #30363d;
-      --accent:   #6366f1;
-      --accent-h: #818cf8;
-      --text:     #e6edf3;
-      --muted:    #8b949e;
-      --ok:       #3fb950;
-      --err:      #f85149;
-      --warn:     #d29922;
-      --info:     #58a6ff;
-      --r:        6px;
-      --mono:     'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+      --bg:#0d1117; --surface:#161b22; --surface2:#21262d; --border:#30363d;
+      --accent:#6366f1; --accent-h:#818cf8;
+      --text:#e6edf3; --muted:#8b949e;
+      --ok:#3fb950; --err:#f85149; --warn:#d29922; --info:#58a6ff;
+      --r:6px; --mono:'JetBrains Mono','Fira Code',ui-monospace,monospace;
     }
-
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      font-size: 14px;
-      line-height: 1.5;
-      min-height: 100vh;
-    }
+    body { background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:14px; line-height:1.5; min-height:100vh; display:flex; flex-direction:column; }
 
     /* ── Header ── */
-    header {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 12px 24px;
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-      position: sticky;
-      top: 0;
-      z-index: 10;
-    }
-    header svg { flex-shrink: 0; }
-    header h1 { font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
-    header .tagline { font-size: 11px; color: var(--muted); margin-top: 1px; }
-    .health {
-      margin-left: auto;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 12px;
-      color: var(--muted);
-    }
-    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); transition: background .3s; }
-    .dot.ok  { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
-    .dot.err { background: var(--err); }
+    header { display:flex; align-items:center; gap:10px; padding:11px 20px; background:var(--surface); border-bottom:1px solid var(--border); position:sticky; top:0; z-index:20; flex-shrink:0; }
+    header h1 { font-size:15px; font-weight:600; }
+    header .tagline { font-size:11px; color:var(--muted); margin-top:1px; }
+    .health { margin-left:auto; display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
+    .dot { width:8px; height:8px; border-radius:50%; background:var(--border); transition:background .3s; }
+    .dot.ok  { background:var(--ok); box-shadow:0 0 6px var(--ok); }
+    .dot.err { background:var(--err); }
 
     /* ── Agent bar ── */
-    .agent-bar {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 8px 24px;
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-      font-size: 12px;
-    }
-    .agent-bar .lbl { color: var(--muted); white-space: nowrap; }
-    .agent-bar select { min-width: 260px; font-size: 12px; padding: 4px 10px; }
-    .agent-badge {
-      display: inline-flex; align-items: center; gap: 5px;
-      padding: 3px 8px;
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      font-family: var(--mono);
-      font-size: 11px;
-      color: var(--muted);
-    }
-    .agent-badge .model { color: var(--accent-h); }
+    .agent-bar { display:flex; align-items:center; gap:10px; padding:7px 20px; background:var(--surface); border-bottom:1px solid var(--border); font-size:12px; flex-shrink:0; }
+    .agent-bar .lbl { color:var(--muted); white-space:nowrap; }
+    .agent-bar select { min-width:240px; font-size:12px; padding:4px 10px; }
+    .agent-badge { display:inline-flex; align-items:center; gap:5px; padding:3px 8px; background:var(--surface2); border:1px solid var(--border); border-radius:4px; font-family:var(--mono); font-size:11px; color:var(--muted); }
+    .agent-badge .model { color:var(--accent-h); }
 
     /* ── Tabs ── */
-    nav {
-      display: flex;
-      gap: 2px;
-      padding: 0 24px;
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-    }
-    .tab {
-      padding: 10px 16px;
-      background: none; border: none;
-      border-bottom: 2px solid transparent;
-      color: var(--muted); font-size: 13px; font-weight: 500;
-      cursor: pointer; transition: color .15s;
-    }
-    .tab:hover { color: var(--text); }
-    .tab.active { color: var(--accent-h); border-bottom-color: var(--accent); }
+    nav { display:flex; gap:2px; padding:0 20px; background:var(--surface); border-bottom:1px solid var(--border); flex-shrink:0; }
+    .tab { padding:9px 15px; background:none; border:none; border-bottom:2px solid transparent; color:var(--muted); font-size:13px; font-weight:500; cursor:pointer; transition:color .15s; }
+    .tab:hover { color:var(--text); }
+    .tab.active { color:var(--accent-h); border-bottom-color:var(--accent); }
 
-    /* ── Layout ── */
-    main { padding: 24px; max-width: 1200px; }
-    .pane { display: none; }
-    .pane.active { display: block; }
+    /* ── Main split layout ── */
+    .workspace { display:flex; flex:1; min-height:0; overflow:hidden; }
+    .left-panel { flex:1; min-width:0; overflow-y:auto; padding:20px; }
+    .right-panel {
+      width:380px; min-width:280px; max-width:480px;
+      flex-shrink:0;
+      border-left:1px solid var(--border);
+      background:var(--surface);
+      display:flex; flex-direction:column;
+      overflow:hidden;
+    }
+    .right-panel.hidden { display:none; }
+    .right-panel-header {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:10px 14px;
+      border-bottom:1px solid var(--border);
+      font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.07em; color:var(--muted);
+      flex-shrink:0;
+    }
+    .log-stream {
+      flex:1; overflow-y:auto;
+      font-family:var(--mono); font-size:11.5px; line-height:1.7;
+      padding:10px 12px;
+      display:flex; flex-direction:column; gap:1px;
+    }
+    .log-entry { display:flex; gap:8px; }
+    .log-ts { color:#404859; white-space:nowrap; flex-shrink:0; }
+    .log-msg { color:var(--muted); word-break:break-word; }
+    .log-msg.info  { color:#c9d1d9; }
+    .log-msg.warn  { color:var(--warn); }
+    .log-msg.error { color:var(--err); }
+    .log-empty { color:var(--muted); padding:20px; text-align:center; font-size:12px; }
+
+    /* ── Panes ── */
+    .pane { display:none; }
+    .pane.active { display:block; }
 
     /* ── Buttons ── */
-    .btn {
-      display: inline-flex; align-items: center; gap: 6px;
-      padding: 6px 14px;
-      background: var(--accent); color: #fff;
-      border: none; border-radius: var(--r);
-      font-size: 13px; font-weight: 500;
-      cursor: pointer; transition: background .15s, opacity .15s;
-      white-space: nowrap;
-    }
-    .btn:hover { background: var(--accent-h); }
-    .btn:disabled { opacity: .45; cursor: not-allowed; pointer-events: none; }
-    .btn-ghost {
-      background: transparent; color: var(--muted);
-      border: 1px solid var(--border);
-    }
-    .btn-ghost:hover { background: var(--surface2); color: var(--text); }
-    .btn-sm { padding: 4px 10px; font-size: 12px; }
-    .btn-danger { background: #6e1c1c; color: #ffa198; }
-    .btn-danger:hover { background: var(--err); color: #fff; }
+    .btn { display:inline-flex; align-items:center; gap:6px; padding:6px 14px; background:var(--accent); color:#fff; border:none; border-radius:var(--r); font-size:13px; font-weight:500; cursor:pointer; transition:background .15s; white-space:nowrap; }
+    .btn:hover { background:var(--accent-h); }
+    .btn:disabled { opacity:.45; cursor:not-allowed; pointer-events:none; }
+    .btn-ghost { background:transparent; color:var(--muted); border:1px solid var(--border); }
+    .btn-ghost:hover { background:var(--surface2); color:var(--text); }
+    .btn-sm { padding:4px 10px; font-size:12px; }
+    .btn-danger { background:#6e1c1c; color:#ffa198; }
+    .btn-danger:hover { background:var(--err); color:#fff; }
 
-    /* ── Cards ── */
-    .card {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--r); padding: 16px;
-    }
+    /* ── Cards / Table / etc ── */
+    .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:16px; }
+    .badge { display:inline-block; padding:2px 8px; border-radius:9999px; font-size:11px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; }
+    .s-queued,.s-injecting,.s-waiting_propagation,.s-triggering,.s-running_agent,.s-evaluating,.s-recovering { background:#0d2040; color:var(--info); }
+    .s-completed { background:#0f2d1f; color:var(--ok); }
+    .s-failed { background:#2d0f0f; color:var(--err); }
+    .s-timed_out { background:#2d1e0f; color:var(--warn); }
 
-    /* ── Badges ── */
-    .badge {
-      display: inline-block; padding: 2px 8px;
-      border-radius: 9999px; font-size: 11px; font-weight: 600;
-      letter-spacing: .04em; text-transform: uppercase;
-    }
-    .s-queued,.s-injecting,.s-waiting_propagation,
-    .s-triggering,.s-running_agent,.s-evaluating,.s-recovering
-      { background:#0d2040; color:var(--info); }
-    .s-completed  { background:#0f2d1f; color:var(--ok); }
-    .s-failed     { background:#2d0f0f; color:var(--err); }
-    .s-timed_out  { background:#2d1e0f; color:var(--warn); }
-
-    /* ── Table ── */
-    .tbl-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
-    table { width: 100%; border-collapse: collapse; }
-    th {
-      text-align: left; font-size: 11px; font-weight: 600;
-      text-transform: uppercase; letter-spacing: .06em;
-      color: var(--muted); padding: 9px 14px;
-      border-bottom: 1px solid var(--border); background: var(--surface);
-    }
-    td { padding: 11px 14px; border-bottom: 1px solid var(--border); font-size: 13px; }
-    tr:last-child td { border-bottom: none; }
-    tr.clickable { cursor: pointer; }
-    tr.clickable:hover td { background: var(--surface2); }
-    tr.sel td { background: #1a1f3a !important; }
+    .tbl-wrap { background:var(--surface); border:1px solid var(--border); border-radius:var(--r); overflow:hidden; }
+    table { width:100%; border-collapse:collapse; }
+    th { text-align:left; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); padding:9px 14px; border-bottom:1px solid var(--border); }
+    td { padding:10px 14px; border-bottom:1px solid var(--border); font-size:13px; }
+    tr:last-child td { border-bottom:none; }
+    tr.clickable { cursor:pointer; }
+    tr.clickable:hover td { background:var(--surface2); }
+    tr.sel td { background:#1a1f3a !important; }
 
     /* ── Score bars ── */
-    .sbar { display: flex; align-items: center; gap: 10px; margin: 5px 0; }
-    .sbar .lbl { width: 116px; font-size: 12px; color: var(--muted); }
-    .sbar .track { flex: 1; height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
-    .sbar .fill  { height: 100%; border-radius: 3px; transition: width .4s; }
-    .sbar .num   { width: 52px; text-align: right; font-size: 12px; font-family: var(--mono); }
+    .sbar { display:flex; align-items:center; gap:10px; margin:5px 0; }
+    .sbar .lbl { width:116px; font-size:12px; color:var(--muted); }
+    .sbar .track { flex:1; height:5px; background:var(--border); border-radius:3px; overflow:hidden; }
+    .sbar .fill  { height:100%; border-radius:3px; transition:width .4s; }
+    .sbar .num   { width:52px; text-align:right; font-size:12px; font-family:var(--mono); }
 
-    /* ── Detail panel ── */
-    .detail {
-      margin-top: 14px; background: var(--surface);
-      border: 1px solid var(--border); border-radius: var(--r); overflow: hidden;
-    }
-    .detail-scores { padding: 16px; border-bottom: 1px solid var(--border); }
-    .detail pre {
-      padding: 16px; font-family: var(--mono); font-size: 12px;
-      line-height: 1.65; overflow-x: auto;
-      white-space: pre-wrap; word-break: break-all; color: var(--muted);
-    }
-    .detail pre .line-sep   { color: #404859; }
-    .detail pre .line-head  { color: var(--accent-h); font-weight: bold; }
-    .detail pre .line-ok    { color: var(--ok); }
-    .detail pre .line-err   { color: var(--err); }
-    .detail pre .line-warn  { color: var(--warn); }
-    .detail pre .line-num   { color: var(--info); }
+    /* ── Detail ── */
+    .detail { margin-top:14px; background:var(--surface); border:1px solid var(--border); border-radius:var(--r); overflow:hidden; }
+    .detail-scores { padding:14px 16px; border-bottom:1px solid var(--border); }
+    .detail pre { padding:14px 16px; font-family:var(--mono); font-size:12px; line-height:1.65; overflow-x:auto; white-space:pre-wrap; word-break:break-all; color:var(--muted); }
+    .detail pre .line-sep   { color:#404859; }
+    .detail pre .line-head  { color:var(--accent-h); font-weight:bold; }
+    .detail pre .line-ok    { color:var(--ok); }
+    .detail pre .line-err   { color:var(--err); }
+    .detail pre .line-warn  { color:var(--warn); }
+    .detail pre .line-num   { color:var(--info); }
 
-    /* ── Sub-tabs inside detail ── */
-    .sub-tabs {
-      display: flex; gap: 0;
-      border-bottom: 1px solid var(--border);
-      background: var(--surface);
-    }
-    .sub-tab {
-      padding: 8px 16px; background: none; border: none;
-      border-bottom: 2px solid transparent;
-      color: var(--muted); font-size: 12px; font-weight: 500;
-      cursor: pointer; transition: color .15s;
-    }
-    .sub-tab:hover { color: var(--text); }
-    .sub-tab.active { color: var(--accent-h); border-bottom-color: var(--accent); }
-    .sub-pane { display: none; }
-    .sub-pane.active { display: block; }
+    /* ── Sub-tabs ── */
+    .sub-tabs { display:flex; border-bottom:1px solid var(--border); }
+    .sub-tab { padding:8px 16px; background:none; border:none; border-bottom:2px solid transparent; color:var(--muted); font-size:12px; font-weight:500; cursor:pointer; transition:color .15s; }
+    .sub-tab:hover { color:var(--text); }
+    .sub-tab.active { color:var(--accent-h); border-bottom-color:var(--accent); }
+    .sub-pane { display:none; }
+    .sub-pane.active { display:block; }
+
+    /* ── Phase bar ── */
+    .phase-bar { display:flex; align-items:center; gap:8px; padding:7px 14px; font-size:12px; border-bottom:1px solid var(--border); background:var(--surface2); }
+    .phase-label { color:var(--muted); }
+    .phase-value { color:var(--info); font-weight:600; }
 
     /* ── Case grid ── */
-    .case-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
-    .case-card { border: 1px solid var(--border); border-radius: var(--r); padding: 16px; background: var(--surface); position: relative; }
-    .case-card:hover { border-color: var(--accent); }
-    .case-id { font-family: var(--mono); font-size: 13px; font-weight: 600; }
-    .case-title { font-size: 12px; color: var(--muted); margin: 4px 0 10px; }
-    .case-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 14px; font-size: 11px; color: var(--muted); }
-    .case-meta span { color: var(--text); }
+    .case-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:12px; }
+    .case-card { border:1px solid var(--border); border-radius:var(--r); padding:16px; background:var(--surface); }
+    .case-card:hover { border-color:var(--accent); }
+    .case-id { font-family:var(--mono); font-size:13px; font-weight:600; }
+    .case-title { font-size:12px; color:var(--muted); margin:4px 0 10px; }
+    .case-meta { display:grid; grid-template-columns:1fr 1fr; gap:3px 14px; font-size:11px; color:var(--muted); }
+    .case-meta span { color:var(--text); }
 
-    /* ── Upload panel ── */
-    textarea {
-      width: 100%; min-height: 200px;
-      background: var(--surface2); border: 1px solid var(--border);
-      border-radius: var(--r); color: var(--text);
-      font-family: var(--mono); font-size: 12px;
-      padding: 12px; resize: vertical; outline: none; line-height: 1.6;
-    }
-    textarea:focus { border-color: var(--accent); }
-
-    /* ── Select ── */
-    select {
-      background: var(--surface2); border: 1px solid var(--border);
-      border-radius: var(--r); color: var(--text);
-      padding: 6px 12px; font-size: 13px; cursor: pointer; outline: none; min-width: 180px;
-    }
-    select:focus { border-color: var(--accent); }
+    /* ── Upload ── */
+    textarea { width:100%; min-height:200px; background:var(--surface2); border:1px solid var(--border); border-radius:var(--r); color:var(--text); font-family:var(--mono); font-size:12px; padding:12px; resize:vertical; outline:none; line-height:1.6; }
+    textarea:focus { border-color:var(--accent); }
+    select { background:var(--surface2); border:1px solid var(--border); border-radius:var(--r); color:var(--text); padding:6px 12px; font-size:13px; cursor:pointer; outline:none; min-width:180px; }
+    select:focus { border-color:var(--accent); }
 
     /* ── Alerts ── */
-    .alert { padding: 10px 14px; border-radius: var(--r); font-size: 13px; margin-bottom: 12px; animation: fadeIn .2s; }
+    .alert { padding:10px 14px; border-radius:var(--r); font-size:13px; margin-bottom:12px; animation:fadeIn .2s; }
     .alert-ok   { background:#0f2d1f; color:#7ee787; border:1px solid #196c2e; }
     .alert-err  { background:#2d0f0f; color:#ffa198; border:1px solid #6e1c1c; }
     .alert-info { background:#0d2040; color:#79c0ff; border:1px solid #1158c7; }
-    @keyframes fadeIn { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:none; } }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:none} }
 
-    /* ── Metrics summary cards ── */
-    .stat-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
-    .stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 16px; }
-    .stat .v { font-size: 28px; font-weight: 700; color: var(--accent-h); font-family: var(--mono); line-height: 1; }
-    .stat .l { font-size: 11px; color: var(--muted); margin-top: 6px; text-transform: uppercase; letter-spacing: .06em; }
+    /* ── Metrics ── */
+    .stat-row { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; margin-bottom:24px; }
+    .stat { background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:14px; }
+    .stat .v { font-size:26px; font-weight:700; color:var(--accent-h); font-family:var(--mono); line-height:1; }
+    .stat .l { font-size:11px; color:var(--muted); margin-top:5px; text-transform:uppercase; letter-spacing:.06em; }
 
     /* ── Chat messages ── */
-    .messages-wrap {
-      padding: 14px;
-      max-height: 520px;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    .msg { display: flex; gap: 10px; align-items: flex-start; max-width: 100%; }
-    .msg-avatar {
-      width: 28px; height: 28px; border-radius: 50%;
-      flex-shrink: 0; display: flex; align-items: center; justify-content: center;
-      font-size: 13px; font-weight: 700;
-    }
-    .avatar-user { background: #1d3566; color: var(--info); }
-    .avatar-agent { background: #1d2a1d; color: var(--ok); }
-    .avatar-tool  { background: #2a1d2a; color: #d2a8ff; }
-    .msg-body { flex: 1; min-width: 0; }
-    .msg-role { font-size: 11px; color: var(--muted); margin-bottom: 4px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
-    .msg-bubble {
-      padding: 10px 13px; border-radius: 8px;
-      font-size: 13px; line-height: 1.55;
-      white-space: pre-wrap; word-break: break-word;
-    }
-    .bubble-user  { background: #0d2040; color: #c9d1d9; border: 1px solid #1158c7; }
-    .bubble-agent { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
-    .bubble-tool  {
-      background: #160d24; border: 1px solid #3d2359;
-      font-family: var(--mono); font-size: 12px; color: #d2a8ff;
-    }
-    .tool-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
-    .tool-name-badge {
-      padding: 2px 7px; border-radius: 4px;
-      background: #2a1d3a; border: 1px solid #6e40c9;
-      font-size: 11px; color: #d2a8ff;
-    }
-    .skill-name-badge {
-      padding: 2px 7px; border-radius: 4px;
-      background: #0f2d1f; border: 1px solid #196c2e;
-      font-size: 11px; color: var(--ok); font-weight: 600;
-    }
-    .outcome-ok   { color: var(--ok); }
-    .outcome-err  { color: var(--err); }
-    .outcome-unk  { color: var(--muted); }
-    .tool-duration { font-size: 10px; color: var(--muted); }
-    .tool-args { color: #8b949e; font-size: 11px; overflow-x: auto; }
+    .messages-wrap { padding:12px; max-height:480px; overflow-y:auto; display:flex; flex-direction:column; gap:10px; }
+    .msg { display:flex; gap:10px; align-items:flex-start; }
+    .msg-avatar { width:26px; height:26px; border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; }
+    .avatar-user  { background:#1d3566; color:var(--info); }
+    .avatar-agent { background:#1d2a1d; color:var(--ok); }
+    .avatar-tool  { background:#2a1d2a; color:#d2a8ff; }
+    .msg-body { flex:1; min-width:0; }
+    .msg-role { font-size:10px; color:var(--muted); margin-bottom:3px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; }
+    .msg-bubble { padding:9px 12px; border-radius:7px; font-size:13px; line-height:1.55; white-space:pre-wrap; word-break:break-word; }
+    .bubble-user  { background:#0d2040; color:#c9d1d9; border:1px solid #1158c7; }
+    .bubble-agent { background:var(--surface2); color:var(--text); border:1px solid var(--border); }
+    .bubble-tool  { background:#160d24; border:1px solid #3d2359; font-family:var(--mono); font-size:12px; color:#d2a8ff; }
+    .tool-header  { display:flex; align-items:center; gap:7px; margin-bottom:5px; flex-wrap:wrap; }
+    .tool-name-badge  { padding:2px 6px; border-radius:4px; background:#2a1d3a; border:1px solid #6e40c9; font-size:11px; color:#d2a8ff; }
+    .skill-name-badge { padding:2px 6px; border-radius:4px; background:#0f2d1f; border:1px solid #196c2e; font-size:11px; color:var(--ok); font-weight:600; }
+    .outcome-ok  { color:var(--ok); }
+    .outcome-err { color:var(--err); }
+    .outcome-unk { color:var(--muted); }
+    .tool-duration { font-size:10px; color:var(--muted); }
+    .tool-args { color:#8b949e; font-size:11px; overflow-x:auto; }
 
-    /* ── Skill chips (live timeline) ── */
-    .skill-chips-wrap {
-      display: flex; flex-wrap: wrap; gap: 6px;
-      padding: 10px 14px;
-      border-bottom: 1px solid var(--border);
-      min-height: 36px;
-      background: var(--bg);
-    }
-    .skill-chips-label { font-size: 11px; color: var(--muted); align-self: center; white-space: nowrap; margin-right: 4px; }
-    .skill-chip {
-      display: inline-flex; align-items: center; gap: 4px;
-      padding: 3px 9px; border-radius: 4px;
-      font-size: 11px; font-family: var(--mono); font-weight: 600;
-    }
-    .chip-ok   { background: #0f2d1f; color: var(--ok);   border: 1px solid #196c2e; }
-    .chip-err  { background: #2d0f0f; color: var(--err);  border: 1px solid #6e1c1c; }
-    .chip-run  { background: #0d2040; color: var(--info); border: 1px solid #1158c7; }
-    .chip-unk  { background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
+    /* ── Skill chips ── */
+    .skill-chips-wrap { display:flex; flex-wrap:wrap; gap:5px; padding:9px 13px; border-bottom:1px solid var(--border); min-height:34px; }
+    .skill-chips-label { font-size:11px; color:var(--muted); align-self:center; white-space:nowrap; margin-right:4px; }
+    .skill-chip { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:4px; font-size:11px; font-family:var(--mono); font-weight:600; }
+    .chip-ok  { background:#0f2d1f; color:var(--ok);   border:1px solid #196c2e; }
+    .chip-err { background:#2d0f0f; color:var(--err);  border:1px solid #6e1c1c; }
+    .chip-unk { background:var(--surface2); color:var(--muted); border:1px solid var(--border); }
 
-    /* ── Phase indicator ── */
-    .phase-bar {
-      display: flex; align-items: center; gap: 8px;
-      padding: 8px 14px; font-size: 12px;
-      border-bottom: 1px solid var(--border);
-      background: var(--surface2);
-    }
-    .phase-label { color: var(--muted); }
-    .phase-value { color: var(--info); font-weight: 600; }
+    /* ── Agents list ── */
+    .agent-list { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:10px; }
+    .agent-card { border:1px solid var(--border); border-radius:var(--r); padding:13px; background:var(--surface); cursor:pointer; transition:border-color .15s; }
+    .agent-card:hover { border-color:var(--accent); }
+    .agent-card.selected { border-color:var(--ok); background:#0a1f12; }
+    .agent-name  { font-weight:600; font-size:13px; margin-bottom:3px; }
+    .agent-model { font-size:12px; color:var(--accent-h); font-family:var(--mono); }
+    .agent-id-txt { font-size:10px; color:var(--muted); font-family:var(--mono); margin-top:3px; }
+    .agent-tick  { float:right; color:var(--ok); font-size:15px; }
 
-    /* ── Agents list (settings) ── */
-    .agent-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; }
-    .agent-card {
-      border: 1px solid var(--border); border-radius: var(--r);
-      padding: 14px; background: var(--surface);
-      cursor: pointer; transition: border-color .15s;
-    }
-    .agent-card:hover { border-color: var(--accent); }
-    .agent-card.selected { border-color: var(--ok); background: #0a1f12; }
-    .agent-name { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
-    .agent-model { font-size: 12px; color: var(--accent-h); font-family: var(--mono); }
-    .agent-id-txt { font-size: 10px; color: var(--muted); font-family: var(--mono); margin-top: 4px; }
-    .agent-tick { float: right; color: var(--ok); font-size: 16px; }
+    /* ── Misc ── */
+    .row { display:flex; align-items:center; gap:10px; }
+    .row-between { display:flex; align-items:center; justify-content:space-between; }
+    .mb-16 { margin-bottom:16px; }
+    .mb-8  { margin-bottom:8px; }
+    .mt-8  { margin-top:8px; }
+    .mt-16 { margin-top:16px; }
+    .sec-label { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); margin-bottom:12px; }
+    .mono { font-family:var(--mono); }
+    .muted { color:var(--muted); }
+    .text-sm { font-size:12px; }
+    @keyframes spin { to{transform:rotate(360deg)} }
+    .spin { display:inline-block; width:12px; height:12px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin .7s linear infinite; vertical-align:middle; margin-left:4px; }
+    .empty { text-align:center; padding:40px 16px; color:var(--muted); }
+    .empty .ico { font-size:28px; margin-bottom:8px; }
 
-    /* ── Misc helpers ── */
-    .row { display: flex; align-items: center; gap: 10px; }
-    .row-between { display: flex; align-items: center; justify-content: space-between; }
-    .mb-16 { margin-bottom: 16px; }
-    .mb-8  { margin-bottom: 8px; }
-    .mt-8  { margin-top: 8px; }
-    .mt-16 { margin-top: 16px; }
-    .sec-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin-bottom: 12px; }
-    .mono { font-family: var(--mono); }
-    .muted { color: var(--muted); }
-    .text-sm { font-size: 12px; }
-
-    /* ── Spinner ── */
-    @keyframes spin { to { transform:rotate(360deg); } }
-    .spin {
-      display: inline-block; width: 12px; height: 12px;
-      border: 2px solid var(--border); border-top-color: var(--accent);
-      border-radius: 50%; animation: spin .7s linear infinite;
-      vertical-align: middle; margin-left: 4px;
-    }
-
-    /* ── Empty state ── */
-    .empty { text-align: center; padding: 48px 16px; color: var(--muted); }
-    .empty .ico { font-size: 30px; margin-bottom: 10px; }
+    /* ── Chat error ── */
+    .chat-err { padding:12px 14px; color:var(--err); font-size:12px; font-family:var(--mono); }
   </style>
 </head>
 <body>
 
 <header>
-  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent-h)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent-h)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
     <circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>
   </svg>
   <div>
@@ -377,7 +236,6 @@
   </div>
 </header>
 
-<!-- Agent selector bar (always visible) -->
 <div class="agent-bar">
   <span class="lbl">▶ Run as agent:</span>
   <select id="agent-select" onchange="onAgentChange()">
@@ -397,98 +255,95 @@
   <button class="tab" data-tab="settings">⚙ Agents</button>
 </nav>
 
-<main>
+<!-- workspace = left content + right log panel -->
+<div class="workspace">
+  <div class="left-panel">
 
-  <!-- ── CASES ── -->
-  <section id="pane-cases" class="pane active">
-    <div class="row-between mb-16">
-      <div class="sec-label" style="margin:0">Loaded Cases</div>
-      <div class="row">
-        <button class="btn btn-ghost btn-sm" onclick="loadCases()">↻ Refresh</button>
-        <button class="btn btn-sm" id="btn-show-up">＋ Upload Case</button>
+    <!-- ── CASES ── -->
+    <section id="pane-cases" class="pane active">
+      <div class="row-between mb-16">
+        <div class="sec-label" style="margin:0">Loaded Cases</div>
+        <div class="row">
+          <button class="btn btn-ghost btn-sm" onclick="loadCases()">↻ Refresh</button>
+          <button class="btn btn-sm" id="btn-show-up">＋ Upload Case</button>
+        </div>
       </div>
-    </div>
-    <div id="cases-alert"></div>
-
-    <div id="up-panel" style="display:none" class="card mb-16">
-      <div class="sec-label">Paste Case YAML</div>
-      <textarea id="yaml-input" placeholder="id: my-case-001&#10;title: &quot;My test case&quot;&#10;fault:&#10;  injector: image_pull_failure&#10;  ..."></textarea>
-      <div class="row mt-8">
-        <button class="btn" onclick="uploadCase()">Upload</button>
-        <button class="btn btn-ghost" onclick="hideUpload()">Cancel</button>
+      <div id="cases-alert"></div>
+      <div id="up-panel" style="display:none" class="card mb-16">
+        <div class="sec-label">Paste Case YAML</div>
+        <textarea id="yaml-input" placeholder="id: my-case-001&#10;..."></textarea>
+        <div class="row mt-8">
+          <button class="btn" onclick="uploadCase()">Upload</button>
+          <button class="btn btn-ghost" onclick="hideUpload()">Cancel</button>
+        </div>
       </div>
-    </div>
-
-    <div id="case-grid" class="case-grid">
-      <div class="empty" style="grid-column:1/-1">
-        <div class="ico">📋</div>
-        <div>No cases loaded. Upload a YAML to get started.</div>
+      <div id="case-grid" class="case-grid">
+        <div class="empty" style="grid-column:1/-1"><div class="ico">📋</div><div>No cases loaded.</div></div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- ── RUNS ── -->
-  <section id="pane-runs" class="pane">
-    <div class="row-between mb-16">
-      <div class="sec-label" style="margin:0">Run History</div>
-      <div class="row">
-        <select id="sel-case"><option value="">Select case…</option></select>
-        <button class="btn btn-sm" onclick="startRun()">▶ Start Run</button>
-        <button class="btn btn-ghost btn-sm" onclick="refreshRuns()">↻</button>
+    <!-- ── RUNS ── -->
+    <section id="pane-runs" class="pane">
+      <div class="row-between mb-16">
+        <div class="sec-label" style="margin:0">Run History</div>
+        <div class="row">
+          <select id="sel-case"><option value="">Select case…</option></select>
+          <button class="btn btn-sm" onclick="startRun()">▶ Start Run</button>
+          <button class="btn btn-ghost btn-sm" onclick="refreshRuns()">↻</button>
+        </div>
       </div>
-    </div>
-    <div id="runs-alert"></div>
-    <div class="tbl-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Run ID</th>
-            <th>Case</th>
-            <th>Agent</th>
-            <th>Status</th>
-            <th>TTL</th>
-            <th>Skill Score</th>
-            <th>Started</th>
-          </tr>
-        </thead>
-        <tbody id="runs-body">
-          <tr><td colspan="7" class="empty" style="text-align:center">No runs yet</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <div id="run-detail"></div>
-  </section>
-
-  <!-- ── METRICS ── -->
-  <section id="pane-metrics" class="pane">
-    <div class="row-between mb-16">
-      <div class="sec-label" style="margin:0">Aggregate Metrics</div>
-      <button class="btn btn-ghost btn-sm" onclick="loadMetrics()">↻ Refresh</button>
-    </div>
-    <div id="metrics-body">
-      <div class="empty"><div class="ico">📊</div><div>No data yet. Run a case first.</div></div>
-    </div>
-  </section>
-
-  <!-- ── SETTINGS / AGENTS ── -->
-  <section id="pane-settings" class="pane">
-    <div class="row-between mb-16">
-      <div class="sec-label" style="margin:0">Available Agents</div>
-      <button class="btn btn-ghost btn-sm" onclick="loadAgents()">↻ Refresh</button>
-    </div>
-    <p class="muted text-sm mb-16">
-      Select which agent to use for evaluation runs. Selection is saved in your browser and overrides the agent UUID in the case YAML.
-      This lets you re-test after an agentbox rebuild without editing the YAML.
-    </p>
-    <div id="agents-alert"></div>
-    <div id="agent-list" class="agent-list">
-      <div class="empty" style="grid-column:1/-1">
-        <div class="ico">🤖</div><div>Loading agents…</div>
+      <div id="runs-alert"></div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr>
+            <th>Run ID</th><th>Case</th><th>Agent</th>
+            <th>Status</th><th>TTL</th><th>Skill Score</th><th>Started</th>
+          </tr></thead>
+          <tbody id="runs-body">
+            <tr><td colspan="7" class="empty" style="text-align:center">No runs yet</td></tr>
+          </tbody>
+        </table>
       </div>
-    </div>
-  </section>
+      <div id="run-detail"></div>
+    </section>
 
-</main>
+    <!-- ── METRICS ── -->
+    <section id="pane-metrics" class="pane">
+      <div class="row-between mb-16">
+        <div class="sec-label" style="margin:0">Aggregate Metrics</div>
+        <button class="btn btn-ghost btn-sm" onclick="loadMetrics()">↻ Refresh</button>
+      </div>
+      <div id="metrics-body">
+        <div class="empty"><div class="ico">📊</div><div>No data yet.</div></div>
+      </div>
+    </section>
+
+    <!-- ── AGENTS / SETTINGS ── -->
+    <section id="pane-settings" class="pane">
+      <div class="row-between mb-16">
+        <div class="sec-label" style="margin:0">Available Agents</div>
+        <button class="btn btn-ghost btn-sm" onclick="loadAgents()">↻ Refresh</button>
+      </div>
+      <p class="muted text-sm mb-16">Select an agent to use for all runs. Saved in browser — survives agentbox rebuilds without editing YAML.</p>
+      <div id="agents-alert"></div>
+      <div id="agent-list" class="agent-list">
+        <div class="empty" style="grid-column:1/-1"><div class="ico">🤖</div><div>Loading…</div></div>
+      </div>
+    </section>
+
+  </div><!-- /left-panel -->
+
+  <!-- ── RIGHT PANEL: Run Log ── -->
+  <div class="right-panel" id="right-panel">
+    <div class="right-panel-header">
+      <span id="log-title">Evaluator Run Log</span>
+      <button class="btn btn-ghost btn-sm" onclick="toggleLogPanel()" title="Hide log panel">✕</button>
+    </div>
+    <div id="log-stream" class="log-stream">
+      <div class="log-empty">Select a run to see its log.</div>
+    </div>
+  </div>
+</div><!-- /workspace -->
 
 <script>
 // ────────────────────────────────────────────────────────────────────────────
@@ -496,25 +351,25 @@
 // ────────────────────────────────────────────────────────────────────────────
 const S = {
   cases:      [],
-  runs:       {},        // runId → RunReport
+  runs:       {},
   selRun:     null,
-  timers:     {},        // runId → intervalId (polling)
-  msgTimers:  {},        // runId → intervalId (message polling)
-  agents:     [],        // Agent[] from Portal
+  timers:     {},        // runId → poll interval
+  msgTimers:  {},        // runId → message poll interval
+  logTimers:  {},        // runId → log poll interval
+  agents:     [],
   selAgent:   localStorage.getItem('eval-agent') || '',
-  liveMessages: {},      // runId → { messages, selTab }
+  liveData:   {},        // runId → { msgs: [], log: [], msgErr: null }
+  logVisible: true,
 };
 
 // ────────────────────────────────────────────────────────────────────────────
-// API helpers
+// API
 // ────────────────────────────────────────────────────────────────────────────
 async function req(method, path, body) {
   const opts = { method, headers: {} };
   if (body !== undefined) {
     opts.body = typeof body === 'string' ? body : JSON.stringify(body);
-    opts.headers['Content-Type'] = typeof body === 'string'
-      ? 'text/plain; charset=utf-8'
-      : 'application/json';
+    opts.headers['Content-Type'] = typeof body === 'string' ? 'text/plain; charset=utf-8' : 'application/json';
   }
   const r = await fetch(path, opts);
   const txt = await r.text();
@@ -526,17 +381,11 @@ async function req(method, path, body) {
 // Health
 // ────────────────────────────────────────────────────────────────────────────
 async function checkHealth() {
-  const dot = document.getElementById('dot');
-  const lbl = document.getElementById('health-lbl');
-  try {
-    await req('GET', '/healthz');
-    dot.className = 'dot ok'; lbl.textContent = 'online';
-  } catch {
-    dot.className = 'dot err'; lbl.textContent = 'unreachable';
-  }
+  const dot = document.getElementById('dot'), lbl = document.getElementById('health-lbl');
+  try { await req('GET', '/healthz'); dot.className = 'dot ok'; lbl.textContent = 'online'; }
+  catch { dot.className = 'dot err'; lbl.textContent = 'unreachable'; }
 }
-checkHealth();
-setInterval(checkHealth, 30_000);
+checkHealth(); setInterval(checkHealth, 30_000);
 
 // ────────────────────────────────────────────────────────────────────────────
 // Tabs
@@ -545,8 +394,7 @@ document.querySelectorAll('.tab').forEach(btn => {
   btn.onclick = () => {
     const t = btn.dataset.tab;
     document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b === btn));
-    document.querySelectorAll('.pane').forEach(p =>
-      p.classList.toggle('active', p.id === `pane-${t}`));
+    document.querySelectorAll('.pane').forEach(p => p.classList.toggle('active', p.id === `pane-${t}`));
     if (t === 'metrics')  loadMetrics();
     if (t === 'runs')     syncRunSelect();
     if (t === 'settings') renderAgentList();
@@ -555,83 +403,111 @@ document.querySelectorAll('.tab').forEach(btn => {
 function gotoTab(t) { document.querySelector(`.tab[data-tab="${t}"]`).click(); }
 
 // ────────────────────────────────────────────────────────────────────────────
+// Log panel
+// ────────────────────────────────────────────────────────────────────────────
+function toggleLogPanel() {
+  S.logVisible = !S.logVisible;
+  document.getElementById('right-panel').classList.toggle('hidden', !S.logVisible);
+}
+
+function renderLogPanel(runId) {
+  const el = document.getElementById('log-stream');
+  if (!runId) { el.innerHTML = '<div class="log-empty">Select a run to see its log.</div>'; return; }
+  const data = S.liveData[runId];
+  const entries = data?.log ?? [];
+  const titleEl = document.getElementById('log-title');
+  if (titleEl) titleEl.textContent = `Run Log — ${runId.slice(0,8)}…`;
+
+  if (!entries.length) {
+    el.innerHTML = '<div class="log-empty">No log entries yet…</div>';
+    return;
+  }
+  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+  el.innerHTML = entries.map(e => {
+    const time = new Date(e.ts).toLocaleTimeString('zh-CN', { hour12: false });
+    return `<div class="log-entry">
+      <span class="log-ts">${esc(time)}</span>
+      <span class="log-msg ${esc(e.level)}">${esc(e.msg)}</span>
+    </div>`;
+  }).join('');
+  if (atBottom) el.scrollTop = el.scrollHeight;
+}
+
+async function fetchLog(runId) {
+  try {
+    const body = await req('GET', `/runs/${runId}/log`);
+    if (!S.liveData[runId]) S.liveData[runId] = { msgs: [], log: [], msgErr: null };
+    S.liveData[runId].log = body.entries ?? [];
+    if (S.selRun === runId) renderLogPanel(runId);
+  } catch { /* silent */ }
+}
+
+function startLogPoll(runId) {
+  stopLogPoll(runId);
+  fetchLog(runId);
+  S.logTimers[runId] = setInterval(() => fetchLog(runId), 2_000);
+}
+function stopLogPoll(runId) { clearInterval(S.logTimers[runId]); delete S.logTimers[runId]; }
+
+// ────────────────────────────────────────────────────────────────────────────
 // Agents
 // ────────────────────────────────────────────────────────────────────────────
 async function loadAgents() {
   try {
     const body = await req('GET', '/agents');
-    // Portal may return { agents: [...] } or { data: [...] }
-    const list = body.agents ?? body.data ?? (Array.isArray(body) ? body : []);
-    S.agents = list;
-    buildAgentSelect();
-    renderAgentList();
-    updateAgentBar();
+    S.agents = body.agents ?? body.data ?? (Array.isArray(body) ? body : []);
+    buildAgentSelect(); renderAgentList(); updateAgentBar();
   } catch (e) {
-    alert_('agents-alert', 'err', `Failed to load agents: ${e.message}`);
-    const sel = document.getElementById('agent-select');
-    sel.innerHTML = '<option value="">Failed to load — check Portal connection</option>';
+    alert_('agents-alert', 'err', `Failed: ${e.message}`);
+    document.getElementById('agent-select').innerHTML =
+      '<option value="">Failed to load — check Portal connection</option>';
   }
 }
 
 function buildAgentSelect() {
   const sel = document.getElementById('agent-select');
-  sel.innerHTML = '<option value="">Use case default agent</option>' +
+  sel.innerHTML = '<option value="">Use case default</option>' +
     S.agents.map(a => {
-      const model = agentModel(a);
-      const label = `${a.name || a.id}${model ? '  —  ' + model : ''}`;
-      return `<option value="${esc(a.id)}"${a.id === S.selAgent ? ' selected' : ''}>${esc(label)}</option>`;
+      const m = agentModel(a);
+      return `<option value="${esc(a.id)}"${a.id === S.selAgent ? ' selected' : ''}>${esc(a.name || a.id)}${m ? '  —  ' + m : ''}</option>`;
     }).join('');
 }
 
 function renderAgentList() {
   const el = document.getElementById('agent-list');
+  if (!el) return;
   if (!S.agents.length) {
-    el.innerHTML = `<div class="empty" style="grid-column:1/-1">
-      <div class="ico">🤖</div><div>No agents found. Check Portal connection.</div></div>`;
+    el.innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="ico">🤖</div><div>No agents found.</div></div>`;
     return;
   }
   el.innerHTML = S.agents.map(a => {
-    const model = agentModel(a);
-    const sel = a.id === S.selAgent;
+    const m = agentModel(a), sel = a.id === S.selAgent;
     return `<div class="agent-card${sel ? ' selected' : ''}" onclick="selectAgent('${esc(a.id)}')">
       ${sel ? '<span class="agent-tick">✓</span>' : ''}
       <div class="agent-name">${esc(a.name || '(unnamed)')}</div>
-      ${model ? `<div class="agent-model">${esc(model)}</div>` : ''}
+      ${m ? `<div class="agent-model">${esc(m)}</div>` : ''}
       <div class="agent-id-txt">${esc(a.id)}</div>
     </div>`;
   }).join('');
 }
 
 function selectAgent(id) {
-  S.selAgent = id;
-  localStorage.setItem('eval-agent', id);
-  buildAgentSelect();
-  renderAgentList();
-  updateAgentBar();
+  S.selAgent = id; localStorage.setItem('eval-agent', id);
+  buildAgentSelect(); renderAgentList(); updateAgentBar();
 }
-
-function onAgentChange() {
-  const val = document.getElementById('agent-select').value;
-  selectAgent(val);
-}
-
+function onAgentChange() { selectAgent(document.getElementById('agent-select').value); }
 function updateAgentBar() {
   const info = document.getElementById('agent-info');
   if (!S.selAgent) { info.style.display = 'none'; return; }
   const a = S.agents.find(x => x.id === S.selAgent);
   if (!a) { info.style.display = 'none'; return; }
-  const model = agentModel(a);
-  document.getElementById('agent-info-model').textContent = model || 'unknown model';
-  document.getElementById('agent-info-id').textContent = S.selAgent.slice(0, 8) + '…';
+  document.getElementById('agent-info-model').textContent = agentModel(a) || 'unknown model';
+  document.getElementById('agent-info-id').textContent = S.selAgent.slice(0,8) + '…';
   info.style.display = '';
 }
-
 function agentModel(a) {
-  // Portal returns model_provider + model_id (e.g. "moonshot" + "Kimi-K2.5")
   if (a.model_provider && a.model_id) return `${a.model_provider}/${a.model_id}`;
-  // Fallback field names
-  return a.model_name || a.config?.model_name || a.config?.model ||
-         a.llm_model || a.model || '';
+  return a.model_name || a.config?.model_name || a.config?.model || a.model || '';
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -640,26 +516,23 @@ function agentModel(a) {
 async function loadCases() {
   try {
     const { cases } = await req('GET', '/cases');
-    S.cases = cases ?? [];
-    renderCases();
-    syncRunSelect();
+    S.cases = cases ?? []; renderCases(); syncRunSelect();
   } catch (e) { alert_('cases-alert', 'err', e.message); }
 }
 
 function renderCases() {
   const g = document.getElementById('case-grid');
   if (!S.cases.length) {
-    g.innerHTML = `<div class="empty" style="grid-column:1/-1">
-      <div class="ico">📋</div><div>No cases loaded. Upload a YAML to get started.</div></div>`;
+    g.innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="ico">📋</div><div>No cases. Upload a YAML to get started.</div></div>`;
     return;
   }
   g.innerHTML = S.cases.map(c => `
     <div class="case-card">
       <div class="row-between mb-8">
         <div class="case-id">${esc(c.id)}</div>
-        <div class="row" style="gap:6px">
+        <div class="row" style="gap:5px">
           <button class="btn btn-sm" onclick="quickRun('${esc(c.id)}')">▶ Run</button>
-          <button class="btn btn-ghost btn-sm btn-danger" onclick="deleteCase('${esc(c.id)}',event)" title="Delete case">🗑</button>
+          <button class="btn btn-ghost btn-sm btn-danger" onclick="deleteCase('${esc(c.id)}',event)">🗑</button>
         </div>
       </div>
       <div class="case-title">${esc(c.title)}</div>
@@ -668,7 +541,6 @@ function renderCases() {
         <div>Propagation</div> <div><span>${c.fault?.propagation_wait_sec ?? 0}s</span></div>
         <div>Budget</div>      <div><span>${c.budget?.ttl_sec ?? '?'}s / ${(c.budget?.max_tokens ?? 0).toLocaleString()} tok</span></div>
         <div>Must use</div>    <div><span style="font-size:11px">${mustUseLabel(c)}</span></div>
-        <div>Agent (YAML)</div><div><span class="mono" style="font-size:10px">${esc((c.trigger?.agent ?? '').slice(0,8))}…</span></div>
       </div>
     </div>`).join('');
 }
@@ -678,12 +550,12 @@ async function deleteCase(id, evt) {
   if (!confirm(`Delete case "${id}"?`)) return;
   try {
     await req('DELETE', `/cases/${encodeURIComponent(id)}`);
-    alert_('cases-alert', 'ok', `Case "${id}" deleted`);
+    alert_('cases-alert', 'ok', `Deleted "${id}"`);
     await loadCases();
   } catch (e) { alert_('cases-alert', 'err', `Delete failed: ${e.message}`); }
 }
 
-function hideUpload()  { document.getElementById('up-panel').style.display = 'none'; }
+function hideUpload() { document.getElementById('up-panel').style.display = 'none'; }
 document.getElementById('btn-show-up').onclick = () => {
   const p = document.getElementById('up-panel');
   p.style.display = p.style.display === 'none' ? 'block' : 'none';
@@ -695,8 +567,7 @@ async function uploadCase() {
   try {
     const r = await req('POST', '/cases', yaml);
     alert_('cases-alert', 'ok', `Case "${r.id}" uploaded`);
-    hideUpload();
-    document.getElementById('yaml-input').value = '';
+    hideUpload(); document.getElementById('yaml-input').value = '';
     await loadCases();
   } catch (e) { alert_('cases-alert', 'err', `Upload failed: ${e.message}`); }
 }
@@ -704,13 +575,18 @@ async function uploadCase() {
 // ────────────────────────────────────────────────────────────────────────────
 // Runs
 // ────────────────────────────────────────────────────────────────────────────
+async function loadRuns() {
+  try {
+    const { runs } = await req('GET', '/runs');
+    (runs ?? []).forEach(r => { S.runs[r.runId] = r; });
+    renderRunsTable();
+  } catch { /* server may not have any runs */ }
+}
+
 function syncRunSelect() {
-  const sel = document.getElementById('sel-case');
-  const cur = sel.value;
+  const sel = document.getElementById('sel-case'), cur = sel.value;
   sel.innerHTML = '<option value="">Select case…</option>' +
-    S.cases.map(c =>
-      `<option value="${esc(c.id)}"${c.id === cur ? ' selected' : ''}>${esc(c.id)}</option>`
-    ).join('');
+    S.cases.map(c => `<option value="${esc(c.id)}"${c.id === cur ? ' selected' : ''}>${esc(c.id)}</option>`).join('');
 }
 
 async function startRun() {
@@ -718,11 +594,7 @@ async function startRun() {
   if (!id) return alert_('runs-alert', 'info', 'Select a case first');
   await fireRun(id);
 }
-
-async function quickRun(id) {
-  gotoTab('runs');
-  await fireRun(id);
-}
+async function quickRun(id) { gotoTab('runs'); await fireRun(id); }
 
 async function fireRun(caseId) {
   try {
@@ -732,7 +604,9 @@ async function fireRun(caseId) {
     S.runs[r.runId] = r;
     renderRunsTable();
     pollRun(r.runId);
-    alert_('runs-alert', 'info', `Run queued — polling for updates…`);
+    // Auto-select and show log
+    selectRun(r.runId);
+    alert_('runs-alert', 'info', 'Run queued…');
   } catch (e) { alert_('runs-alert', 'err', `Failed: ${e.message}`); }
 }
 
@@ -750,52 +624,57 @@ async function fetchRun(runId) {
       if (S.selRun === runId) S.selRun = r.runId;
     }
     S.runs[r.runId ?? runId] = r;
-    if (terminal(r.status)) { stopPollRun(runId); stopPollMsgs(runId); }
+    const newId = r.runId ?? runId;
+    if (terminal(r.status)) {
+      stopPollRun(runId); stopMsgPoll(runId); stopLogPoll(runId);
+      // One final fetch after completion
+      setTimeout(() => { fetchMessages(newId); fetchLog(newId); }, 500);
+    }
     renderRunsTable();
-    const active = S.selRun === runId || S.selRun === r.runId;
-    if (active) renderDetail(r.runId ?? runId);
+    if (S.selRun === runId || S.selRun === newId) renderDetail(newId);
   } catch { /* network blip */ }
 }
 
-function pollRun(runId) {
-  stopPollRun(runId);
-  S.timers[runId] = setInterval(() => fetchRun(runId), 2_500);
-}
-function stopPollRun(runId) { clearInterval(S.timers[runId]); delete S.timers[runId]; }
+function pollRun(id) { stopPollRun(id); S.timers[id] = setInterval(() => fetchRun(id), 2_500); }
+function stopPollRun(id) { clearInterval(S.timers[id]); delete S.timers[id]; }
+function terminal(s) { return s === 'completed' || s === 'failed' || s === 'timed_out'; }
 
-function pollMessages(runId) {
-  stopPollMsgs(runId);
+// ── Message polling ──
+function startMsgPoll(runId) {
+  stopMsgPoll(runId);
   fetchMessages(runId);
   S.msgTimers[runId] = setInterval(() => fetchMessages(runId), 3_000);
 }
-function stopPollMsgs(runId) { clearInterval(S.msgTimers[runId]); delete S.msgTimers[runId]; }
+function stopMsgPoll(runId) { clearInterval(S.msgTimers[runId]); delete S.msgTimers[runId]; }
 
 async function fetchMessages(runId) {
+  if (!S.liveData[runId]) S.liveData[runId] = { msgs: [], log: [], msgErr: null };
   try {
     const body = await req('GET', `/runs/${runId}/messages`);
-    const msgs = body.data ?? body.messages ?? [];
-    S.liveMessages[runId] = msgs;
-    if (S.selRun === runId) renderChatTab(runId);
-  } catch { /* ignore */ }
+    S.liveData[runId].msgs = body.data ?? body.messages ?? [];
+    S.liveData[runId].msgErr = null;
+  } catch (e) {
+    S.liveData[runId].msgErr = e.message;
+  }
+  if (S.selRun === runId) renderChatTab(runId);
 }
 
-function terminal(s) { return s === 'completed' || s === 'failed' || s === 'timed_out'; }
-
+// ────────────────────────────────────────────────────────────────────────────
+// Run table
+// ────────────────────────────────────────────────────────────────────────────
 function renderRunsTable() {
   const body = document.getElementById('runs-body');
-  const list = Object.values(S.runs).sort((a, b) => new Date(b.startedAt) - new Date(a.startedAt));
+  const list = Object.values(S.runs).sort((a,b) => new Date(b.startedAt) - new Date(a.startedAt));
   if (!list.length) {
     body.innerHTML = `<tr><td colspan="7" class="empty" style="text-align:center">No runs yet</td></tr>`;
     return;
   }
   body.innerHTML = list.map(r => {
     const sc = r.score?.skill_score;
-    const scHtml = sc != null
-      ? `<span class="mono" style="color:${scColor(sc)}">${sc.toFixed(4)}</span>`
-      : `<span class="muted">—</span>`;
+    const scHtml = sc != null ? `<span class="mono" style="color:${scColor(sc)}">${sc.toFixed(4)}</span>` : '<span class="muted">—</span>';
     const live = !terminal(r.status);
-    const sel  = r.runId === S.selRun ? 'sel' : '';
-    const agentShort = r.agentId ? r.agentId.slice(0,8) + '…' : '—';
+    const sel = r.runId === S.selRun ? 'sel' : '';
+    const agentShort = r.agentId ? r.agentId.slice(0,8)+'…' : '—';
     return `<tr class="clickable ${sel}" onclick="selectRun('${esc(r.runId)}')">
       <td class="mono text-sm">${esc(r.runId.slice(0,8))}…${live ? '<span class="spin"></span>' : ''}</td>
       <td>${esc(r.caseId)}</td>
@@ -809,40 +688,38 @@ function renderRunsTable() {
 }
 
 function selectRun(id) {
-  S.selRun = S.selRun === id ? null : id;
+  if (S.selRun === id) { S.selRun = null; renderRunsTable(); document.getElementById('run-detail').innerHTML = ''; renderLogPanel(null); return; }
+  S.selRun = id;
   renderRunsTable();
-  if (S.selRun) {
-    renderDetail(id);
-    const r = S.runs[id];
-    if (r && !terminal(r.status)) pollMessages(id);
-    else fetchMessages(id);
-  } else {
-    document.getElementById('run-detail').innerHTML = '';
-  }
+  renderDetail(id);
+  renderLogPanel(id);
+  // Start polls
+  startLogPoll(id);
+  const r = S.runs[id];
+  if (r && !terminal(r.status)) startMsgPoll(id);
+  else fetchMessages(id);
 }
 
 // ────────────────────────────────────────────────────────────────────────────
 // Run detail panel
 // ────────────────────────────────────────────────────────────────────────────
-async function renderDetail(runId) {
+function renderDetail(runId) {
   const panel = document.getElementById('run-detail');
-  const r = S.runs[runId];
-  if (!r) return;
-
+  const r = S.runs[runId]; if (!r) return;
   const isLive = !terminal(r.status);
-  const curTab = S.liveMessages[runId]?._selTab ?? 'report';
+  const curTab = (S.liveData[runId] && S.liveData[runId]._tab) ? S.liveData[runId]._tab : 'chat';
 
   const sc = r.score;
   let scoreHtml = '';
   if (sc) {
     scoreHtml = `<div class="detail-scores">
-      <div class="sec-label" style="margin-bottom:10px">Score Overview</div>
-      ${sbar('Sufficiency',  sc.sufficiency,  '#3fb950', false)}
-      ${sbar('Necessity',    sc.necessity,    '#58a6ff', false)}
-      ${sbar('Skill Score',  sc.skill_score,  '#818cf8', false)}
-      ${sbar('Noise Ratio',  sc.noise_ratio,  '#d29922', true)}
-      ${sc.missing_must_use?.length ? `<div style="margin-top:10px;font-size:12px;color:var(--err)">⚠ Missing must-use: ${esc(sc.missing_must_use.join(', '))}</div>` : ''}
-      ${sc.forbidden_used?.length   ? `<div style="font-size:12px;color:var(--err)">✗ Forbidden used: ${esc(sc.forbidden_used.join(', '))}</div>`   : ''}
+      <div class="sec-label" style="margin-bottom:8px">Score Overview</div>
+      ${sbar('Sufficiency', sc.sufficiency, '#3fb950', false)}
+      ${sbar('Necessity',   sc.necessity,   '#58a6ff', false)}
+      ${sbar('Skill Score', sc.skill_score, '#818cf8', false)}
+      ${sbar('Noise Ratio', sc.noise_ratio, '#d29922', true)}
+      ${sc.missing_must_use?.length ? `<div style="margin-top:8px;font-size:12px;color:var(--err)">⚠ Missing must-use: ${esc(sc.missing_must_use.join(', '))}</div>` : ''}
+      ${sc.forbidden_used?.length   ? `<div style="font-size:12px;color:var(--err)">✗ Forbidden used: ${esc(sc.forbidden_used.join(', '))}</div>` : ''}
     </div>`;
   }
 
@@ -854,45 +731,35 @@ async function renderDetail(runId) {
     ${phaseHtml}
     ${scoreHtml}
     <div class="sub-tabs">
-      <button class="sub-tab${curTab === 'chat' ? ' active' : ''}" onclick="switchSubTab('${runId}','chat')">💬 Live Chat</button>
-      <button class="sub-tab${curTab === 'report' ? ' active' : ''}" onclick="switchSubTab('${runId}','report')">📝 Report</button>
+      <button class="sub-tab${curTab==='chat'?' active':''}" onclick="setSubTab('${runId}','chat')">💬 Live Chat</button>
+      <button class="sub-tab${curTab==='report'?' active':''}" onclick="setSubTab('${runId}','report')">📝 Report</button>
     </div>
-    <div id="sub-chat-${runId}" class="sub-pane${curTab === 'chat' ? ' active' : ''}">
-      <div id="skill-chips-${runId}" class="skill-chips-wrap">
+    <div id="sub-chat-${runId}" class="sub-pane${curTab==='chat'?' active':''}">
+      <div id="chips-${runId}" class="skill-chips-wrap">
         <span class="skill-chips-label">Skills used:</span>
         <span class="muted text-sm">none yet</span>
       </div>
-      <div id="messages-${runId}" class="messages-wrap">
-        <div class="empty" style="padding:24px"><div class="ico">💬</div><div>Waiting for session to start…</div></div>
+      <div id="msgs-${runId}" class="messages-wrap">
+        <div class="empty" style="padding:20px"><div class="ico">💬</div><div>Waiting for session…</div></div>
       </div>
     </div>
-    <div id="sub-report-${runId}" class="sub-pane${curTab === 'report' ? ' active' : ''}">
-      <pre class="muted" id="report-pre-${runId}">Loading report…</pre>
+    <div id="sub-report-${runId}" class="sub-pane${curTab==='report'?' active':''}">
+      <pre id="report-pre-${runId}" class="muted">Loading…</pre>
     </div>
   </div>`;
 
-  // Load the text report
   loadTextReport(runId);
-  // Render whatever messages we already have
   renderChatTab(runId);
 }
 
-function switchSubTab(runId, tab) {
-  if (!S.liveMessages[runId]) S.liveMessages[runId] = {};
-  S.liveMessages[runId]._selTab = tab;
-
-  const chatEl   = document.getElementById(`sub-chat-${runId}`);
-  const reportEl = document.getElementById(`sub-report-${runId}`);
-  const tabs = document.querySelectorAll(`#run-detail .sub-tab`);
-  if (!chatEl || !reportEl) return;
-
-  chatEl.classList.toggle('active', tab === 'chat');
-  reportEl.classList.toggle('active', tab === 'report');
-  tabs.forEach(t => {
-    const isChat   = t.textContent.includes('Chat');
-    const isReport = t.textContent.includes('Report');
-    if (isChat)   t.classList.toggle('active', tab === 'chat');
-    if (isReport) t.classList.toggle('active', tab === 'report');
+function setSubTab(runId, tab) {
+  if (!S.liveData[runId]) S.liveData[runId] = { msgs:[], log:[], msgErr:null };
+  S.liveData[runId]._tab = tab;
+  ['chat','report'].forEach(t => {
+    document.getElementById(`sub-${t}-${runId}`)?.classList.toggle('active', t === tab);
+  });
+  document.querySelectorAll(`#run-detail .sub-tab`).forEach(b => {
+    b.classList.toggle('active', (tab==='chat' && b.textContent.includes('Chat')) || (tab==='report' && b.textContent.includes('Report')));
   });
 }
 
@@ -908,89 +775,70 @@ async function loadTextReport(runId) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Chat tab rendering
+// Chat tab
 // ────────────────────────────────────────────────────────────────────────────
 const SKILL_TOOLS = new Set(['local_script','pod_script','host_script','node_script']);
 
 function renderChatTab(runId) {
-  const msgs = S.liveMessages[runId];
-  const msgList = Array.isArray(msgs) ? msgs : [];
-
-  const chipsEl = document.getElementById(`skill-chips-${runId}`);
-  const msgsEl  = document.getElementById(`messages-${runId}`);
+  const data = S.liveData[runId] ?? {};
+  const msgList = data.msgs ?? [];
+  const chipsEl = document.getElementById(`chips-${runId}`);
+  const msgsEl  = document.getElementById(`msgs-${runId}`);
   if (!chipsEl || !msgsEl) return;
 
-  // Extract skill invocations
-  const skills = msgList.filter(m =>
-    m.role === 'tool' && m.tool_name && SKILL_TOOLS.has(m.tool_name)
-  );
-  let skillInput = {};
-  try {
-    skills.forEach(m => {
+  // Skill chips
+  const skillMap = {};
+  msgList.filter(m => m.role === 'tool' && SKILL_TOOLS.has(m.tool_name)).forEach(m => {
+    try {
       const inp = typeof m.tool_input === 'string' ? JSON.parse(m.tool_input) : m.tool_input;
-      if (inp?.skill) skillInput[inp.skill] = m.outcome || 'unknown';
-    });
-  } catch {}
-
-  // Render skill chips
-  const chipEntries = Object.entries(skillInput);
+      if (inp?.skill) skillMap[inp.skill] = m.outcome || 'unknown';
+    } catch {}
+  });
+  const chips = Object.entries(skillMap);
   chipsEl.innerHTML = '<span class="skill-chips-label">Skills used:</span>' + (
-    chipEntries.length
-      ? chipEntries.map(([name, outcome]) => {
-          const cls = outcome === 'success' ? 'chip-ok' : outcome === 'error' ? 'chip-err' : 'chip-unk';
-          const icon = outcome === 'success' ? '✓' : outcome === 'error' ? '✗' : '?';
-          return `<span class="skill-chip ${cls}">${icon} ${esc(name)}</span>`;
+    chips.length
+      ? chips.map(([n, o]) => {
+          const cls = o === 'success' ? 'chip-ok' : o === 'error' ? 'chip-err' : 'chip-unk';
+          return `<span class="skill-chip ${cls}">${o==='success'?'✓':o==='error'?'✗':'?'} ${esc(n)}</span>`;
         }).join('')
       : '<span class="muted text-sm">none yet</span>'
   );
 
-  // Render messages
+  // Error state
+  if (data.msgErr) {
+    msgsEl.innerHTML = `<div class="chat-err">⚠ Failed to load messages: ${esc(data.msgErr)}</div>`;
+    return;
+  }
+
+  // No messages yet
   if (!msgList.length) {
     const r = S.runs[runId];
     const waiting = r && !terminal(r.status);
-    msgsEl.innerHTML = `<div class="empty" style="padding:24px">
-      <div class="ico">💬</div>
-      <div>${waiting ? 'Waiting for session to start…' : 'No messages in this session.'}</div>
+    msgsEl.innerHTML = `<div class="empty" style="padding:20px"><div class="ico">💬</div>
+      <div>${waiting ? 'Session starting — messages will appear shortly…' : 'No messages in this session.'}</div>
     </div>`;
     return;
   }
 
-  // Check scroll position before updating (auto-scroll if near bottom)
   const atBottom = msgsEl.scrollHeight - msgsEl.scrollTop - msgsEl.clientHeight < 80;
-
-  msgsEl.innerHTML = msgList.map(m => renderMessage(m)).join('');
-
+  msgsEl.innerHTML = msgList.map(renderMessage).filter(Boolean).join('');
   if (atBottom) msgsEl.scrollTop = msgsEl.scrollHeight;
 }
 
 function renderMessage(m) {
   const role = m.role ?? 'unknown';
-
   if (role === 'user') {
-    const content = m.content ?? '';
-    // Strip the [EVAL:...] prefix tag for display
-    const display = content.replace(/^\[EVAL:[^\]]+\]\s*/, '');
-    return `<div class="msg">
-      <div class="msg-avatar avatar-user">U</div>
-      <div class="msg-body">
-        <div class="msg-role">User prompt</div>
-        <div class="msg-bubble bubble-user">${esc(display)}</div>
-      </div>
-    </div>`;
+    const display = (m.content ?? '').replace(/^\[EVAL:[^\]]+\]\s*/, '');
+    return `<div class="msg"><div class="msg-avatar avatar-user">U</div>
+      <div class="msg-body"><div class="msg-role">User prompt</div>
+      <div class="msg-bubble bubble-user">${esc(display)}</div></div></div>`;
   }
-
   if (role === 'assistant' && !m.tool_name) {
-    const content = (m.content ?? '').trim();
-    if (!content) return '';
-    return `<div class="msg">
-      <div class="msg-avatar avatar-agent">A</div>
-      <div class="msg-body">
-        <div class="msg-role">Agent <span class="muted" style="font-weight:400">${fmtDate(m.created_at)}</span></div>
-        <div class="msg-bubble bubble-agent">${esc(content)}</div>
-      </div>
-    </div>`;
+    const content = (m.content ?? '').trim(); if (!content) return '';
+    return `<div class="msg"><div class="msg-avatar avatar-agent">A</div>
+      <div class="msg-body"><div class="msg-role">Agent <span class="muted" style="font-weight:400">${fmtDate(m.created_at)}</span></div>
+      <div class="msg-bubble bubble-agent">${esc(content)}</div></div></div>`;
   }
-
   if (role === 'tool') {
     let inp = {};
     try { inp = typeof m.tool_input === 'string' ? JSON.parse(m.tool_input) : (m.tool_input ?? {}); } catch {}
@@ -998,39 +846,26 @@ function renderMessage(m) {
     const isSkill = m.tool_name && SKILL_TOOLS.has(m.tool_name) && skillName;
     const outcome = m.outcome ?? 'unknown';
     const oc = outcome === 'success' ? 'outcome-ok' : outcome === 'error' ? 'outcome-err' : 'outcome-unk';
-    const outcomeIcon = outcome === 'success' ? '✓' : outcome === 'error' ? '✗' : '?';
-    const args = inp.args ?? inp.script ?? null;
+    const icon = outcome === 'success' ? '✓' : outcome === 'error' ? '✗' : '?';
     const dur = m.duration_ms ? `${m.duration_ms}ms` : '';
-
-    return `<div class="msg">
-      <div class="msg-avatar avatar-tool">⚙</div>
-      <div class="msg-body">
-        <div class="msg-role">Tool call <span class="muted" style="font-weight:400">${fmtDate(m.created_at)}</span></div>
-        <div class="msg-bubble bubble-tool">
-          <div class="tool-header">
-            <span class="tool-name-badge">${esc(m.tool_name ?? '?')}</span>
-            ${isSkill ? `<span class="skill-name-badge">skill: ${esc(skillName)}</span>` : ''}
-            <span class="${oc}">${outcomeIcon} ${esc(outcome)}</span>
-            ${dur ? `<span class="tool-duration">${esc(dur)}</span>` : ''}
-          </div>
-          ${args ? `<div class="tool-args">${esc(String(args).slice(0, 300))}</div>` : ''}
+    const args = inp.args ?? inp.script ?? null;
+    return `<div class="msg"><div class="msg-avatar avatar-tool">⚙</div>
+      <div class="msg-body"><div class="msg-role">Tool <span class="muted" style="font-weight:400">${fmtDate(m.created_at)}</span></div>
+      <div class="msg-bubble bubble-tool">
+        <div class="tool-header">
+          <span class="tool-name-badge">${esc(m.tool_name ?? '?')}</span>
+          ${isSkill ? `<span class="skill-name-badge">skill: ${esc(skillName)}</span>` : ''}
+          <span class="${oc}">${icon} ${esc(outcome)}</span>
+          ${dur ? `<span class="tool-duration">${esc(dur)}</span>` : ''}
         </div>
-      </div>
-    </div>`;
+        ${args ? `<div class="tool-args">${esc(String(args).slice(0,300))}</div>` : ''}
+      </div></div></div>`;
   }
-
-  // assistant dispatch row (has tool_name but no content) — show compact
   if (role === 'assistant' && m.tool_name) {
-    return `<div class="msg" style="opacity:.55">
-      <div class="msg-avatar avatar-agent" style="font-size:10px">→</div>
-      <div class="msg-body">
-        <div class="msg-bubble bubble-agent" style="padding:6px 10px;font-size:12px;font-family:var(--mono)">
-          dispatching <strong>${esc(m.tool_name)}</strong>
-        </div>
-      </div>
-    </div>`;
+    return `<div class="msg" style="opacity:.5"><div class="msg-avatar avatar-agent" style="font-size:10px">→</div>
+      <div class="msg-body"><div class="msg-bubble bubble-agent" style="padding:5px 10px;font-size:12px;font-family:var(--mono)">
+        dispatching <strong>${esc(m.tool_name)}</strong></div></div></div>`;
   }
-
   return '';
 }
 
@@ -1038,65 +873,40 @@ function renderMessage(m) {
 // Metrics
 // ────────────────────────────────────────────────────────────────────────────
 async function loadMetrics() {
-  try {
-    const m = await req('GET', '/metrics');
-    renderMetrics(m);
-  } catch (e) {
-    document.getElementById('metrics-body').innerHTML =
-      `<div class="alert alert-err">${esc(e.message)}</div>`;
-  }
+  try { renderMetrics(await req('GET', '/metrics')); }
+  catch (e) { document.getElementById('metrics-body').innerHTML = `<div class="alert alert-err">${esc(e.message)}</div>`; }
 }
 
 function renderMetrics(m) {
-  const bc = m.byCase  ?? {};
-  const bs = m.bySkill ?? {};
+  const bc = m.byCase ?? {}, bs = m.bySkill ?? {};
   const scores = Object.values(bc).map(c => c.lastSkillScore).filter(x => x != null);
-  const avg = scores.length ? (scores.reduce((a,b)=>a+b,0)/scores.length) : null;
-
+  const avg = scores.length ? scores.reduce((a,b)=>a+b,0)/scores.length : null;
   let h = `<div class="stat-row">
-    <div class="stat"><div class="v">${m.totalRuns ?? 0}</div><div class="l">Total Runs</div></div>
+    <div class="stat"><div class="v">${m.totalRuns??0}</div><div class="l">Total Runs</div></div>
     <div class="stat"><div class="v">${Object.keys(bc).length}</div><div class="l">Cases Tested</div></div>
     <div class="stat"><div class="v" style="color:${avg!=null?scColor(avg):'var(--accent-h)'}">${avg!=null?avg.toFixed(3):'—'}</div><div class="l">Avg Skill Score</div></div>
     <div class="stat"><div class="v">${Object.keys(bs).length}</div><div class="l">Unique Skills</div></div>
   </div>`;
-
   if (Object.keys(bc).length) {
-    h += `<div class="sec-label">Per Case</div>
-    <div class="tbl-wrap mb-16"><table>
-      <thead><tr><th>Case ID</th><th>Runs</th><th>Last Skill Score</th></tr></thead>
-      <tbody>${Object.entries(bc).map(([id,c]) => `
-        <tr>
-          <td class="mono text-sm">${esc(id)}</td>
-          <td>${c.runs}</td>
-          <td style="color:${c.lastSkillScore!=null?scColor(c.lastSkillScore):'var(--muted)'}">${c.lastSkillScore!=null?c.lastSkillScore.toFixed(4):'—'}</td>
-        </tr>`).join('')}
-      </tbody>
+    h += `<div class="sec-label">Per Case</div><div class="tbl-wrap mb-16"><table>
+      <thead><tr><th>Case ID</th><th>Runs</th><th>Last Score</th></tr></thead>
+      <tbody>${Object.entries(bc).map(([id,c])=>`<tr><td class="mono text-sm">${esc(id)}</td><td>${c.runs}</td>
+        <td style="color:${c.lastSkillScore!=null?scColor(c.lastSkillScore):'var(--muted)'}">
+        ${c.lastSkillScore!=null?c.lastSkillScore.toFixed(4):'—'}</td></tr>`).join('')}</tbody>
     </table></div>`;
   }
-
   if (Object.keys(bs).length) {
-    h += `<div class="sec-label">Per Skill</div>
-    <div class="tbl-wrap"><table>
+    h += `<div class="sec-label">Per Skill</div><div class="tbl-wrap"><table>
       <thead><tr><th>Skill</th><th>Calls</th><th>Success</th><th>Error</th><th>Rate</th></tr></thead>
-      <tbody>${Object.entries(bs)
-        .sort(([,a],[,b]) => b.invocations - a.invocations)
-        .map(([name,s]) => {
-          const rate = s.invocations ? s.success/s.invocations : 0;
-          return `<tr>
-            <td class="mono text-sm">${esc(name)}</td>
-            <td>${s.invocations}</td>
-            <td style="color:var(--ok)">${s.success}</td>
-            <td style="color:var(--err)">${s.error}</td>
-            <td style="color:${scColor(rate)}">${(rate*100).toFixed(0)}%</td>
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table></div>`;
+      <tbody>${Object.entries(bs).sort(([,a],[,b])=>b.invocations-a.invocations).map(([n,s])=>{
+        const r = s.invocations ? s.success/s.invocations : 0;
+        return `<tr><td class="mono text-sm">${esc(n)}</td><td>${s.invocations}</td>
+          <td style="color:var(--ok)">${s.success}</td><td style="color:var(--err)">${s.error}</td>
+          <td style="color:${scColor(r)}">${(r*100).toFixed(0)}%</td></tr>`;
+      }).join('')}</tbody></table></div>`;
   }
-
-  if (!Object.keys(bc).length && !Object.keys(bs).length) {
-    h = `<div class="empty"><div class="ico">📊</div><div>No data yet. Run a case first.</div></div>`;
-  }
+  if (!Object.keys(bc).length && !Object.keys(bs).length)
+    h = `<div class="empty"><div class="ico">📊</div><div>No data yet.</div></div>`;
   document.getElementById('metrics-body').innerHTML = h;
 }
 
@@ -1105,11 +915,11 @@ function renderMetrics(m) {
 // ────────────────────────────────────────────────────────────────────────────
 function mustUseLabel(c) {
   const list = c.oracle?.must_use_skills ?? [];
-  const shown = list.slice(0, 3).join(', ');
-  return esc(list.length > 3 ? `${shown} …+${list.length - 3}` : shown || '—');
+  const shown = list.slice(0,3).join(', ');
+  return esc(list.length > 3 ? `${shown} …+${list.length-3}` : shown || '—');
 }
 function esc(s) {
-  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 function fmtMs(ms) { return ms < 1000 ? `${ms}ms` : `${(ms/1000).toFixed(2)}s`; }
 function fmtDate(iso) {
@@ -1118,33 +928,27 @@ function fmtDate(iso) {
 }
 function scColor(v) { return v >= .8 ? 'var(--ok)' : v >= .5 ? 'var(--warn)' : 'var(--err)'; }
 function alert_(id, type, msg) {
-  const el = document.getElementById(id);
-  if (!el) return;
+  const el = document.getElementById(id); if (!el) return;
   el.innerHTML = `<div class="alert alert-${type}">${esc(msg)}</div>`;
   setTimeout(() => { if (el) el.innerHTML = ''; }, 6_000);
 }
 function sbar(label, val, color, invertGood) {
-  const pct = Math.round((val ?? 0) * 100);
-  const c = invertGood
-    ? (val < .2 ? '#3fb950' : val < .5 ? '#d29922' : '#f85149')
-    : color;
-  return `<div class="sbar">
-    <div class="lbl">${label}</div>
+  const pct = Math.round((val??0)*100);
+  const c = invertGood ? (val<.2?'#3fb950':val<.5?'#d29922':'#f85149') : color;
+  return `<div class="sbar"><div class="lbl">${label}</div>
     <div class="track"><div class="fill" style="width:${pct}%;background:${c}"></div></div>
-    <div class="num" style="color:${c}">${(val ?? 0).toFixed(4)}</div>
-  </div>`;
+    <div class="num" style="color:${c}">${(val??0).toFixed(4)}</div></div>`;
 }
 function colorReport(txt) {
   return txt.split('\n').map(ln => {
     const e = esc(ln);
-    if (/^─+$/.test(ln))                       return `<span class="line-sep">${e}</span>`;
-    if (/^(EVAL RUN|Case|Status|Score|SCORE|SKILLS|METRICS|TRACE|RCA|RECOMMENDATION)/.test(ln))
-                                                return `<span class="line-head">${e}</span>`;
-    if (/MISSING|FORBIDDEN/.test(ln))           return `<span class="line-err">${e}</span>`;
-    if (/completed|success|hit:/.test(ln))      return `<span class="line-ok">${e}</span>`;
-    if (/failed|error|MISS:/.test(ln))          return `<span class="line-err">${e}</span>`;
-    if (/timed_out|warn/i.test(ln))             return `<span class="line-warn">${e}</span>`;
-    if (/\d+\.\d{4}/.test(ln))                 return `<span class="line-num">${e}</span>`;
+    if (/^─+$/.test(ln)) return `<span class="line-sep">${e}</span>`;
+    if (/^(EVAL RUN|Case|Status|Score|SCORE|SKILLS|METRICS|TRACE|RCA|RECOMMENDATION)/.test(ln)) return `<span class="line-head">${e}</span>`;
+    if (/MISSING|FORBIDDEN/.test(ln)) return `<span class="line-err">${e}</span>`;
+    if (/completed|success|hit:/.test(ln)) return `<span class="line-ok">${e}</span>`;
+    if (/failed|error|MISS:/.test(ln)) return `<span class="line-err">${e}</span>`;
+    if (/timed_out|warn/i.test(ln)) return `<span class="line-warn">${e}</span>`;
+    if (/\d+\.\d{4}/.test(ln)) return `<span class="line-num">${e}</span>`;
     return e;
   }).join('\n');
 }
@@ -1154,6 +958,7 @@ function colorReport(txt) {
 // ────────────────────────────────────────────────────────────────────────────
 loadAgents();
 loadCases();
+loadRuns();
 </script>
 </body>
 </html>
