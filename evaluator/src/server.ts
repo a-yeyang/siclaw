@@ -145,6 +145,17 @@ export function startServer(deps: ServerDeps): { close: () => Promise<void> } {
     const tempId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     placeholder.runId = tempId;
     runs.set(tempId, { report: placeholder, done });
+
+    // Watch for the engine assigning a real UUID and register it immediately.
+    // This prevents SSE message/log streams from 404-ing between ID assignment
+    // and runCase() returning (which can be minutes later).
+    const watchId = setInterval(() => {
+      if (placeholder.runId !== tempId && !runs.has(placeholder.runId)) {
+        runs.set(placeholder.runId, { report: placeholder, done });
+      }
+      if (placeholder.finishedAt) clearInterval(watchId);
+    }, 100);
+
     sendJson(res, 202, { runId: tempId, status: "queued" });
   }
 

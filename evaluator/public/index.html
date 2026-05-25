@@ -672,7 +672,12 @@ async function fetchRun(runId) {
     S.runs[newId] = r;
     if (terminal(r.status)) {
       stopPollRun(runId); stopPollRun(newId);
-      // SSE streams close themselves via 'done' event
+      // If the message stream for this run has already closed (e.g. it 404'd
+      // before the server registered the real UUID), restart it once so the
+      // completed messages are fetched.
+      if (S.selRun === newId && !S.msgStreams[newId]) {
+        startMsgStream(newId);
+      }
     }
     renderRunsTable();
     if (S.selRun === newId) renderDetail(newId);
