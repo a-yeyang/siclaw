@@ -20,7 +20,7 @@ import { HttpTransport } from "./credential-transport.js";
 import { getSyncHandler, createClusterHandler, createHostHandler } from "./sync-handlers.js";
 import { GATEWAY_SYNC_DESCRIPTORS, type AgentBoxSyncHandler, type GatewaySyncType } from "../shared/gateway-sync.js";
 import { detectLanguage } from "../shared/detect-language.js";
-import { readSkillAuditEvents, summarizeSkillAuditEvents } from "../shared/skill-audit-ledger.js";
+import { readSkillAuditEvents, setSkillAuditEventForwarder, summarizeSkillAuditEvents } from "../shared/skill-audit-ledger.js";
 
 type RequestHandler = (
   req: http.IncomingMessage,
@@ -169,6 +169,11 @@ export function createHttpServer(
     const gatewayUrl = process.env.SICLAW_GATEWAY_URL;
     if (gatewayUrl && !sessionManager.gatewayClient) {
       sessionManager.gatewayClient = new GatewayClient({ gatewayUrl });
+    }
+    if (gatewayUrl && sessionManager.gatewayClient) {
+      setSkillAuditEventForwarder(async (event) => {
+        await sessionManager.gatewayClient?.sendSkillAuditEvent(event);
+      });
     }
     if (gatewayUrl && !sessionManager.credentialBroker && sessionManager.gatewayClient) {
       const client = sessionManager.gatewayClient;

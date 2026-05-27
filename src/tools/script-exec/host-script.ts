@@ -10,6 +10,7 @@ import { parseArgs, shellEscape } from "../infra/command-sets.js";
 import { validateNodeName, stdinExecCmd } from "../infra/exec-utils.js";
 import { acquireSshTarget, sshExec } from "../infra/ssh-client.js";
 import { emitDiagnostic } from "../../shared/diagnostic-events.js";
+import { buildScriptArgAudit, skillCallAuditMetadata } from "../infra/script-audit.js";
 
 interface HostScriptParams {
   host: string;
@@ -87,7 +88,7 @@ Examples:
         }),
       ),
     }),
-    async execute(_toolCallId, rawParams, signal) {
+    async execute(toolCallId, rawParams, signal) {
       const params = rawParams as HostScriptParams;
 
       const hostErr = validateNodeName(params.host);
@@ -103,6 +104,23 @@ Examples:
         script: params.script,
       });
       if ("error" in resolved) {
+        if (params.skill) {
+          emitDiagnostic({
+            type: "skill_call",
+            skillName: params.skill,
+            scriptName: params.script,
+            scope: "unknown",
+            outcome: "error",
+            durationMs: 0,
+            sessionId: sessionIdRef?.current,
+            userId: userId ?? "unknown",
+            agentId: agentId ?? null,
+            toolName: "host_script",
+            toolCallId,
+            failureReason: "script_not_found",
+            argValidation: buildScriptArgAudit(params.skill, params.script, params.args),
+          });
+        }
         return {
           content: [{ type: "text", text: `Error: ${resolved.error}` }],
           details: { error: true },
@@ -120,6 +138,7 @@ Examples:
       }
 
       const args = params.args?.trim() || "";
+      const argValidation = params.skill ? buildScriptArgAudit(params.skill, params.script, args) : undefined;
       const escapedArgs = args ? parseArgs(args).map(shellEscape).join(" ") : "";
       const remoteCmd = stdinExecCmd(resolved.interpreter, escapedArgs || undefined);
       const timeout = Math.min(params.timeout_seconds ?? 180, 300) * 1000;
@@ -133,6 +152,24 @@ Examples:
           stdin: resolved.content,
         });
       } catch (err) {
+        if (params.skill) {
+          emitDiagnostic({
+            type: "skill_call",
+            skillName: params.skill,
+            scriptName: params.script,
+            scope: resolved.scope,
+            outcome: "error",
+            durationMs: Date.now() - startMs,
+            sessionId: sessionIdRef?.current,
+            userId: userId ?? "unknown",
+            agentId: agentId ?? null,
+            toolName: "host_script",
+            toolCallId,
+            failureReason: argValidation?.status === "invalid" ? "invalid_args" : "ssh_exec_failed",
+            ...skillCallAuditMetadata(resolved),
+            argValidation,
+          });
+        }
         return {
           content: [{ type: "text", text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
           details: { error: true, reason: "ssh_exec_failed", host: params.host },
@@ -159,6 +196,13 @@ Examples:
           sessionId: sessionIdRef?.current,
           userId: userId ?? "unknown",
           agentId: agentId ?? null,
+          toolName: "host_script",
+          toolCallId,
+          failureReason: isError
+            ? (argValidation?.status === "invalid" ? "invalid_args" : "script_exit_error")
+            : undefined,
+          ...skillCallAuditMetadata(resolved),
+          argValidation,
         });
       }
       const stdoutHeader = isError

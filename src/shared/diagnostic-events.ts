@@ -13,6 +13,17 @@
 import type { BrainSessionStats, BrainModelInfo } from "../core/brain-session.js";
 
 export type SkillAuditScope = "builtin" | "global" | "platform" | "unknown";
+export type SkillAuditArgSchemaStatus = "present" | "missing" | "unknown";
+export type SkillAuditArgValidationStatus = "valid" | "invalid" | "unknown";
+
+export interface SkillAuditArgValidation {
+  schemaStatus?: SkillAuditArgSchemaStatus;
+  status?: SkillAuditArgValidationStatus;
+  errors?: string[];
+  argsPreview?: string;
+  argsHash?: string;
+  parsedArgsJson?: string;
+}
 
 // ── Event types ──
 
@@ -65,12 +76,20 @@ export type DiagnosticEvent =
       type: "skill_call";
       skillName: string;
       scriptName: string;
-      scope: "builtin" | "global";
+      scope: SkillAuditScope;
       outcome: "success" | "error";
       durationMs: number;
       sessionId?: string;
       userId: string;
       agentId: string | null;
+      toolName?: string;
+      toolCallId?: string;
+      failureReason?: string;
+      skillFilePath?: string;
+      skillFileHash?: string;
+      scriptPath?: string;
+      scriptHash?: string;
+      argValidation?: SkillAuditArgValidation;
     }
   // Skill audit lifecycle
   | {
@@ -79,6 +98,7 @@ export type DiagnosticEvent =
       skillName: string;
       scope: SkillAuditScope;
       filePath?: string;
+      fileHash?: string;
       userId: string;
       agentId: string | null;
     }
@@ -88,6 +108,7 @@ export type DiagnosticEvent =
       skillName: string;
       scope: SkillAuditScope;
       filePath?: string;
+      fileHash?: string;
       userId: string;
       agentId: string | null;
     }

@@ -43,7 +43,7 @@ export class MetricsAggregator {
     userId: string;
     agentId: string | null;
     skillName: string;
-    scope: "builtin" | "global";
+    scope: "builtin" | "global" | "platform" | "unknown";
     success: number;
     error: number;
     totalDurationMs: number;

@@ -11,7 +11,7 @@ describe("runPortalMigrations on SQLite :memory:", () => {
     await closeDb();
   });
 
-  it("creates all 27 tables without error", async () => {
+  it("creates all core tables without error", async () => {
     await runPortalMigrations();
     const db = getDb();
     const [rows] = await db.query<Array<{ name: string }>>(
@@ -47,6 +47,7 @@ describe("runPortalMigrations on SQLite :memory:", () => {
       "model_providers",
       "notifications",
       "siclaw_users",
+      "skill_audit_events",
       "skill_import_history",
       "skill_reviews",
       "skill_versions",
@@ -76,6 +77,11 @@ describe("runPortalMigrations on SQLite :memory:", () => {
       "idx_chat_messages_audit",
       "idx_chat_messages_parent",
       "idx_chat_messages_delegation",
+      "idx_skill_audit_session",
+      "idx_skill_audit_user",
+      "idx_skill_audit_agent",
+      "idx_skill_audit_skill",
+      "idx_skill_audit_outcome",
       "idx_notifications_user",
       "idx_api_keys_hash",
       "idx_agent_task_runs_task",

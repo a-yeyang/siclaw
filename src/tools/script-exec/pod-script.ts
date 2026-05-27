@@ -12,6 +12,7 @@ import { validatePodName, prepareExecEnv, spawnAsync, stdinExecCmd } from "../in
 import { resolveRequiredKubeconfig } from "../infra/kubeconfig-resolver.js";
 import { ensureClusterForTool } from "../infra/ensure-kubeconfigs.js";
 import { emitDiagnostic } from "../../shared/diagnostic-events.js";
+import { buildScriptArgAudit, skillCallAuditMetadata } from "../infra/script-audit.js";
 
 interface PodScriptParams {
   pod: string;
@@ -96,7 +97,7 @@ Examples:
         }),
       ),
     }),
-    async execute(_toolCallId, rawParams, signal) {
+    async execute(toolCallId, rawParams, signal) {
       const params = rawParams as PodScriptParams;
 
       try {
@@ -137,6 +138,23 @@ Examples:
         script: params.script,
       });
       if ("error" in resolved) {
+        if (params.skill) {
+          emitDiagnostic({
+            type: "skill_call",
+            skillName: params.skill,
+            scriptName: params.script,
+            scope: "unknown",
+            outcome: "error",
+            durationMs: 0,
+            sessionId: sessionIdRef?.current,
+            userId: userId ?? "unknown",
+            agentId: agentId ?? null,
+            toolName: "pod_script",
+            toolCallId,
+            failureReason: "script_not_found",
+            argValidation: buildScriptArgAudit(params.skill, params.script, params.args),
+          });
+        }
         return {
           content: [{ type: "text", text: `Error: ${resolved.error}` }],
           details: { error: true },
@@ -144,6 +162,7 @@ Examples:
       }
 
       const args = params.args?.trim() || "";
+      const argValidation = params.skill ? buildScriptArgAudit(params.skill, params.script, args) : undefined;
       // Security: shell-escape each argument to prevent injection via args parameter
       const escapedArgs = args ? parseArgs(args).map(shellEscape).join(" ") : "";
       const timeout = Math.min(params.timeout_seconds ?? 180, 300) * 1000;
@@ -181,6 +200,10 @@ Examples:
             sessionId: sessionIdRef?.current,
             userId: userId ?? "unknown",
             agentId: agentId ?? null,
+            toolName: "pod_script",
+            toolCallId,
+            ...skillCallAuditMetadata(resolved),
+            argValidation,
           });
         }
         return {
@@ -199,6 +222,11 @@ Examples:
             sessionId: sessionIdRef?.current,
             userId: userId ?? "unknown",
             agentId: agentId ?? null,
+            toolName: "pod_script",
+            toolCallId,
+            failureReason: argValidation?.status === "invalid" ? "invalid_args" : "script_exit_error",
+            ...skillCallAuditMetadata(resolved),
+            argValidation,
           });
         }
         const stdout = err.stdout?.trim() ?? "";

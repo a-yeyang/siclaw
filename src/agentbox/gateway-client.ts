@@ -10,6 +10,7 @@ import https from "node:https";
 import fs from "node:fs";
 import path from "node:path";
 import type { DelegationPersistenceEvent, DelegationPersistenceResponse } from "../shared/delegation-persistence.js";
+import type { SkillAuditEvent } from "../shared/skill-audit-ledger.js";
 
 export interface GatewayClientOptions {
   gatewayUrl: string;
@@ -139,6 +140,10 @@ export class GatewayClient {
    */
   async sendDelegationPersistenceEvent(event: DelegationPersistenceEvent): Promise<DelegationPersistenceResponse> {
     return this.request("/api/internal/delegation-events", "POST", event);
+  }
+
+  async sendSkillAuditEvent(event: SkillAuditEvent): Promise<{ ok: boolean }> {
+    return this.request("/api/internal/skill-audit-events", "POST", { event });
   }
 
   /**

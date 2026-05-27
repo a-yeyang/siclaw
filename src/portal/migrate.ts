@@ -307,6 +307,47 @@ const PORTAL_SCHEMA_SQLS: string[] = [
     CONSTRAINT fk_chat_messages_session FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
   )`,
 
+  // Append-only skill-use audit events emitted by AgentBox.
+  `CREATE TABLE IF NOT EXISTS skill_audit_events (
+    id CHAR(36) PRIMARY KEY,
+    session_id CHAR(36) NOT NULL,
+    user_id CHAR(36),
+    agent_id CHAR(36),
+    event_type VARCHAR(40) NOT NULL,
+    recorded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    skill_name VARCHAR(255),
+    skill_scope VARCHAR(20),
+    skill_file_path TEXT,
+    skill_file_hash VARCHAR(64),
+    script_name VARCHAR(255),
+    script_path TEXT,
+    script_hash VARCHAR(64),
+    tool_name VARCHAR(255),
+    tool_call_id VARCHAR(100),
+    mcp_server VARCHAR(255),
+    mcp_tool VARCHAR(255),
+    outcome VARCHAR(20),
+    failure_reason VARCHAR(64),
+    duration_ms INT,
+    args_preview TEXT,
+    args_hash VARCHAR(64),
+    args_schema_status VARCHAR(20),
+    args_validation_status VARCHAR(20),
+    args_validation_errors TEXT,
+    parsed_args_json TEXT,
+    prompt_preview TEXT,
+    prompt_chars INT,
+    model_id VARCHAR(255),
+    model_provider VARCHAR(100),
+    input_tokens INT,
+    output_tokens INT,
+    total_tokens INT,
+    cost_usd DOUBLE,
+    metadata TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_skill_audit_session FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+  )`,
+
   // Model Providers
   `CREATE TABLE IF NOT EXISTS model_providers (
     id CHAR(36) PRIMARY KEY,
@@ -464,6 +505,12 @@ async function createIndexes(): Promise<void> {
   await ensureIndex(db, "chat_messages", "idx_chat_messages_audit", "role, created_at");
   await ensureIndex(db, "chat_messages", "idx_chat_messages_parent", "parent_session_id, created_at");
   await ensureIndex(db, "chat_messages", "idx_chat_messages_delegation", "delegation_id");
+  // skill_audit_events
+  await ensureIndex(db, "skill_audit_events", "idx_skill_audit_session", "session_id, recorded_at");
+  await ensureIndex(db, "skill_audit_events", "idx_skill_audit_user", "user_id, recorded_at");
+  await ensureIndex(db, "skill_audit_events", "idx_skill_audit_agent", "agent_id, recorded_at");
+  await ensureIndex(db, "skill_audit_events", "idx_skill_audit_skill", "skill_name, event_type, recorded_at");
+  await ensureIndex(db, "skill_audit_events", "idx_skill_audit_outcome", "outcome, recorded_at");
   // notifications
   await ensureIndex(db, "notifications", "idx_notifications_user", "user_id, read_at, created_at");
   // agent_api_keys

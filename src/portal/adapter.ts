@@ -8,7 +8,7 @@
 import crypto from "node:crypto";
 import http from "node:http";
 import { getDb } from "../gateway/db.js";
-import { buildUpsert, safeParseJson, toSqlTimestamp } from "../gateway/dialect-helpers.js";
+import { buildUpsert, insertIgnorePrefix, safeParseJson, toSqlTimestamp } from "../gateway/dialect-helpers.js";
 import { createTaskNotification } from "./notification-api.js";
 import {
   sendJson,
@@ -1966,6 +1966,64 @@ export function buildAdapterRpcHandlers(): Map<string, (params: any, agentId: st
     await db.query(
       `UPDATE chat_sessions SET last_active_at = CURRENT_TIMESTAMP WHERE id = ?`,
       [params.session_id],
+    );
+    return { ok: true };
+  });
+
+  handlers.set("skillAudit.appendEvent", async (params) => {
+    const db = getDb();
+    const event = params.event ?? {};
+    const columns = [
+      "id", "session_id", "user_id", "agent_id", "event_type", "recorded_at",
+      "skill_name", "skill_scope", "skill_file_path", "skill_file_hash",
+      "script_name", "script_path", "script_hash", "tool_name", "tool_call_id",
+      "mcp_server", "mcp_tool", "outcome", "failure_reason", "duration_ms",
+      "args_preview", "args_hash", "args_schema_status", "args_validation_status",
+      "args_validation_errors", "parsed_args_json", "prompt_preview", "prompt_chars",
+      "model_id", "model_provider", "input_tokens", "output_tokens", "total_tokens",
+      "cost_usd", "metadata",
+    ];
+    const values = [
+      event.event_id,
+      event.session_id,
+      event.user_id ?? null,
+      event.agent_id ?? null,
+      event.event_type,
+      toSqlTimestamp(event.recorded_at ?? new Date()),
+      event.skill_name ?? null,
+      event.skill_scope ?? null,
+      event.skill_file_path ?? null,
+      event.skill_file_hash ?? null,
+      event.script_name ?? null,
+      event.script_path ?? null,
+      event.script_hash ?? null,
+      event.tool_name ?? null,
+      event.tool_call_id ?? null,
+      event.mcp_server ?? null,
+      event.mcp_tool ?? null,
+      event.outcome ?? null,
+      event.failure_reason ?? null,
+      event.duration_ms ?? null,
+      event.args_preview ?? null,
+      event.args_hash ?? null,
+      event.args_schema_status ?? null,
+      event.args_validation_status ?? null,
+      jsonParam(event.args_validation_errors),
+      event.parsed_args_json ?? null,
+      event.prompt_preview ?? null,
+      event.prompt_chars ?? null,
+      event.model_id ?? null,
+      event.model_provider ?? null,
+      event.input_tokens ?? null,
+      event.output_tokens ?? null,
+      event.total_tokens ?? null,
+      event.cost_usd ?? null,
+      jsonParam(event.metadata),
+    ];
+    await db.query(
+      `${insertIgnorePrefix(db)} INTO skill_audit_events (${columns.map((c) => `\`${c}\``).join(", ")})
+       VALUES (${columns.map(() => "?").join(", ")})`,
+      values,
     );
     return { ok: true };
   });

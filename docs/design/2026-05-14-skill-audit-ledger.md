@@ -23,7 +23,9 @@ This branch includes three related pieces:
 
 1. Runtime instrumentation
    - Records skill availability, skill reads, skill script execution, tool execution, prompt start, and prompt completion.
+   - Records skill/script content hashes, redacted argument previews, argument hashes, argument-schema status, argument validation status, and script failure reasons.
    - Writes JSONL from AgentBox into the writable user-data tree by default.
+   - Best-effort forwards the same append-only events to Runtime/Gateway for Portal DB persistence.
    - Exposes an internal mTLS-protected session audit endpoint for Gateway/Runtime access.
 
 2. Offline analysis
@@ -57,6 +59,10 @@ This branch includes three related pieces:
 
 - `src/tools/script-exec/*-script.ts`
   - Emits `skill_script_executed` for local, pod, node, and host script execution.
+  - Uses optional `script-manifest.json` / `scripts.json` metadata to validate script flags.
+
+- `src/portal/migrate.ts`
+  - Adds `skill_audit_events`, the append-only DB table for runtime skill audit facts.
 
 - `src/agentbox/http-server.ts`
   - Adds `GET /api/sessions/:sessionId/skill-audit`.
@@ -77,6 +83,17 @@ The ledger is append-only JSONL. Important event types:
 - `tool_executed`
 - `prompt_complete`
 
+Script execution events also include:
+
+- `script_hash`
+- `skill_file_hash`
+- `args_preview` (redacted)
+- `args_hash`
+- `args_schema_status`
+- `args_validation_status`
+- `args_validation_errors`
+- `failure_reason`
+
 The analysis script derives:
 
 - `readSkills`
@@ -84,6 +101,9 @@ The analysis script derives:
 - `missingExpectedSkills`
 - `matchedTaskTypes`
 - `readBeforeFirstTool`
+- `executedWithoutReading`
+- `executedBeforeReading`
+- invalid argument counts
 - per-tool and per-skill counts
 
 The current expected-skill matcher is deliberately simple and rule-based. It is a seed for evaluation, not the final router.
@@ -134,7 +154,19 @@ This is exactly the kind of signal the audit layer is meant to expose: answer co
 - `readBeforeFirstTool` currently treats context probes as tools; it may need a refined `readBeforeEvidenceTool` metric.
 - The internal HTTP endpoint is not a user-facing product API. Productizing audit summaries should go through Runtime/Gateway/Portal.
 - Reading a skill does not prove the model understood it. Later evaluation should combine skill reads, checklist coverage, evidence citation, and replay outcomes.
+- Argument spelling can only be judged when a script publishes a machine-readable schema in `script-manifest.json` or `scripts.json`; otherwise the audit records `args_schema_status=missing` and `args_validation_status=unknown`.
 - The current branch records objective behavior; it does not yet enforce workflow checkpoints.
+
+## Portal DB Model
+
+Skill management data already lives in `skills`, `skill_versions`, `skill_reviews`, and agent binding tables. Runtime usage is separate: `skill_audit_events` stores one row per observed event, keyed by `session_id`, `user_id`, `agent_id`, `event_type`, skill/script identity, outcome, timing, hashes, and redacted argument validation details.
+
+This table is intentionally append-only. Session-level and task-level questions are answered by joining:
+
+- `skill_audit_events.session_id -> chat_sessions.id`
+- `skill_audit_events.session_id -> agent_task_runs.session_id`
+
+That lets us answer which scheduled task produced a failed skill execution without duplicating task fields in every audit event.
 
 ## Next Development Directions
 

@@ -1343,14 +1343,43 @@ describe("metrics.auditDetail", () => {
   });
 });
 
+describe("skillAudit.appendEvent", () => {
+  it("persists a skill audit event", async () => {
+    const query = vi.fn().mockResolvedValueOnce([undefined, []]);
+    (getDb as any).mockReturnValue({ driver: "sqlite", query });
+
+    const result = await getHandler("skillAudit.appendEvent")({
+      event: {
+        event_id: "e1",
+        session_id: "s1",
+        user_id: "u1",
+        agent_id: "a1",
+        event_type: "skill_script_executed",
+        recorded_at: "2026-05-27T00:00:00.000Z",
+        skill_name: "pod-debug",
+        script_name: "check.sh",
+        outcome: "error",
+        failure_reason: "invalid_args",
+        args_validation_errors: ["unknown_flag:--nmespace"],
+      },
+    }, "a1");
+
+    expect(result).toEqual({ ok: true });
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query.mock.calls[0][0]).toContain("skill_audit_events");
+    expect(query.mock.calls[0][1]).toContain("e1");
+    expect(query.mock.calls[0][1]).toContain("[\"unknown_flag:--nmespace\"]");
+  });
+});
+
 // ================================================================
 // Handler count verification
 // ================================================================
 
 describe("buildAdapterRpcHandlers", () => {
-  it("registers exactly 44 handlers", () => {
+  it("registers exactly 45 handlers", () => {
     const handlers = buildAdapterRpcHandlers();
-    expect(handlers.size).toBe(44);
+    expect(handlers.size).toBe(45);
   });
 
   it("all expected handler names are registered", () => {
@@ -1368,6 +1397,7 @@ describe("buildAdapterRpcHandlers", () => {
       "channel.list", "channel.resolveBinding", "channel.pair",
       "agent.listForSkill", "agent.listForMcp", "agent.listForCluster", "agent.listForHost",
       "metrics.summary", "metrics.audit", "metrics.auditDetail",
+      "skillAudit.appendEvent",
     ];
     for (const name of expected) {
       expect(handlers.has(name), `Missing handler: ${name}`).toBe(true);

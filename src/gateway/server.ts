@@ -14,6 +14,7 @@
  *   GET  /api/internal/settings            — proxy to adapter
  *   GET  /api/internal/mcp-servers         — proxy to adapter
  *   GET  /api/internal/skills/bundle       — proxy to adapter
+ *   POST /api/internal/skill-audit-events  — persist AgentBox skill audit events
  *   *    /api/internal/agent-tasks[/:id]   — proxy to adapter
  *   POST /api/internal/feedback            — AgentBox feedback
  */
@@ -48,6 +49,7 @@ import {
   handleAgentTasksUpdate,
   handleAgentTasksDelete,
   handleDelegationEvents,
+  handleSkillAuditEvents,
 } from "./internal-api.js";
 // siclaw-api.ts routes moved to Portal — Runtime no longer registers CRUD routes.
 import { appendMessage, incrementMessageCount, ensureChatSession } from "./chat-repo.js";
@@ -647,6 +649,12 @@ export async function startRuntime(opts: StartRuntimeOptions): Promise<RuntimeSe
           if (url === "/api/internal/delegation-events" && method === "POST") {
             if (!identity) { res.writeHead(401, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: "Client certificate required" })); return; }
             handleDelegationEvents(req, res, identity, frontendClient);
+            return;
+          }
+
+          if (url === "/api/internal/skill-audit-events" && method === "POST") {
+            if (!identity) { res.writeHead(401, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: "Client certificate required" })); return; }
+            handleSkillAuditEvents(req, res, identity, frontendClient);
             return;
           }
 

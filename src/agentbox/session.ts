@@ -1532,6 +1532,7 @@ Always end with a final report even if evidence is incomplete.`;
         skillName: skill.name,
         scope: skill.scope,
         filePath: skill.filePath,
+        fileHash: skill.fileHash,
         userId: this.userId ?? "unknown",
         agentId: this.agentId ?? null,
       });

@@ -19,7 +19,7 @@ export interface ToolCallStats {
 /** Skill call ranking entry */
 export interface SkillCallStats {
   skillName: string;
-  scope: "builtin" | "global";
+  scope: "builtin" | "global" | "platform" | "unknown";
   userId: string;
   agentId: string | null;
   success: number;

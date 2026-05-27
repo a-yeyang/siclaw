@@ -37,7 +37,7 @@ import { McpClientManager } from "./mcp-client.js";
 import { loadConfig, getEmbeddingConfig, getConfigPath, getDefaultLlm } from "./config.js";
 import { createGuardRegistry, installGuardPipeline } from "./guard-pipeline.js";
 import { emitDiagnostic, type SkillAuditScope } from "../shared/diagnostic-events.js";
-import { detectSkillReadTarget } from "../shared/skill-audit-ledger.js";
+import { detectSkillReadTarget, hashText } from "../shared/skill-audit-ledger.js";
 
 import type { SessionMode, KubeconfigRef, MemoryRef, DpStateRef, MutableDpStateRef } from "./types.js";
 
@@ -136,7 +136,7 @@ export interface SiclawSessionResult {
   /** Mutable ref — populated when session ID is assigned (for skill_call events) */
   sessionIdRef: { current: string };
   /** Skills loaded into this session, used by AgentBox to emit session-scoped audit events. */
-  skillAuditEntries: Array<{ name: string; scope: SkillAuditScope; filePath?: string }>;
+  skillAuditEntries: Array<{ name: string; scope: SkillAuditScope; filePath?: string; fileHash?: string }>;
 
 }
 
@@ -435,6 +435,7 @@ export async function createSiclawSession(
         readFile: async (p) => {
           assertPathAllowed(p, readAllowedDirs, "read");
           const content = await fsReadFile(p);
+          const text = content.toString();
           const skill = detectSkillReadTarget(p);
           if (skill && sessionIdRef.current) {
             emitDiagnostic({
@@ -443,6 +444,7 @@ export async function createSiclawSession(
               skillName: skill.skillName,
               scope: skill.scope,
               filePath: path.resolve(p),
+              fileHash: hashText(text),
               userId,
               agentId,
             });
@@ -618,6 +620,7 @@ export async function createSiclawSession(
     name: skill.name,
     scope: inferSkillAuditScope(skill.filePath),
     ...(skill.filePath ? { filePath: skill.filePath } : {}),
+    ...(skill.filePath && fs.existsSync(skill.filePath) ? { fileHash: hashText(fs.readFileSync(skill.filePath, "utf-8")) } : {}),
   }));
 
   const sessionManager =

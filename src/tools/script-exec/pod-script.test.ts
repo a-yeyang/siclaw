@@ -1,6 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("../infra/script-resolver.js", () => ({ resolveScript: vi.fn() }));
+vi.mock("../infra/script-resolver.js", () => ({
+  resolveScript: vi.fn(),
+  validateScriptArgs: vi.fn(() => ({
+    schemaStatus: "missing",
+    status: "unknown",
+    errors: [],
+    parsedArgs: { flags: {}, positionals: [] },
+  })),
+}));
 vi.mock("../infra/k8s-checks.js", () => ({ checkPodRunning: vi.fn() }));
 vi.mock("../infra/exec-utils.js", async () => {
   const actual = await vi.importActual<any>("../infra/exec-utils.js");

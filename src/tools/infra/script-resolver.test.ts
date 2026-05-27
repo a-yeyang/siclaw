@@ -9,6 +9,7 @@ import {
   listAllSkillsWithScripts,
   skillExistsInBundle,
   skillExistsAsBuiltin,
+  validateScriptArgs,
 } from "./script-resolver.js";
 
 // script-resolver reads from process.cwd() + config.paths.skillsDir (".siclaw/skills")
@@ -118,6 +119,48 @@ describe("resolveSkillScript — path search precedence", () => {
 
   it("returns null for unknown skill", () => {
     expect(resolveSkillScript("nowhere", "any.sh")).toBeNull();
+  });
+});
+
+describe("validateScriptArgs", () => {
+  it("returns unknown when a script has no manifest schema", () => {
+    mkFile(path.join(tmpRoot, ".siclaw/skills/global/sk/scripts/run.sh"));
+    const result = validateScriptArgs("sk", "run.sh", ["--bad"]);
+    expect(result.schemaStatus).toBe("missing");
+    expect(result.status).toBe("unknown");
+  });
+
+  it("validates required flags, unknown flags, duplicate flags, and allowed values", () => {
+    mkFile(path.join(tmpRoot, ".siclaw/skills/global/sk/scripts/run.sh"));
+    mkFile(path.join(tmpRoot, ".siclaw/skills/global/sk/script-manifest.json"), JSON.stringify({
+      scripts: {
+        "run.sh": {
+          allowExtraArgs: false,
+          args: [
+            { name: "--namespace", aliases: ["-n"], required: true, takesValue: true },
+            { name: "--mode", takesValue: true, allowedValues: ["quick", "full"] },
+            { name: "--verbose" },
+          ],
+        },
+      },
+    }));
+
+    expect(validateScriptArgs("sk", "run.sh", ["-n", "prod", "--mode=quick"]).status).toBe("valid");
+
+    const invalid = validateScriptArgs("sk", "run.sh", [
+      "--mode=slow",
+      "--mode=full",
+      "--unexpected",
+      "positional",
+    ]);
+    expect(invalid.status).toBe("invalid");
+    expect(invalid.errors).toEqual(expect.arrayContaining([
+      "missing_required:--namespace",
+      "invalid_value:--mode",
+      "duplicate_flag:--mode",
+      "unknown_flag:--unexpected",
+      "unexpected_positional_args",
+    ]));
   });
 });
 

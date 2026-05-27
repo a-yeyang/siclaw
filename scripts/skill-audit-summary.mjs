@@ -193,21 +193,33 @@ for (const file of auditFiles(target)) {
   const available = new Map();
   const reads = new Map();
   const scripts = new Map();
+  const scriptFailures = new Map();
+  const invalidArgs = new Map();
   const tools = new Map();
+  const firstReadIndex = new Map();
+  const firstScriptIndex = new Map();
   let prompts = 0;
   const promptPreviews = [];
 
-  for (const event of events) {
+  for (const [index, event] of events.entries()) {
     if (event.event_type === "skill_available" && event.skill_name) {
       inc(available, event.skill_name);
       inc(globalAvailable, event.skill_name);
     } else if (event.event_type === "skill_read" && event.skill_name) {
       inc(reads, event.skill_name);
       inc(globalReads, event.skill_name);
+      if (!firstReadIndex.has(event.skill_name)) firstReadIndex.set(event.skill_name, index);
     } else if (event.event_type === "skill_script_executed") {
       const key = `${event.skill_name ?? "unknown"}/${event.script_name ?? "unknown"}`;
       inc(scripts, key);
       inc(globalScripts, key);
+      if (event.skill_name && !firstScriptIndex.has(event.skill_name)) firstScriptIndex.set(event.skill_name, index);
+      if (event.outcome === "error") {
+        inc(scriptFailures, `${key}:${event.failure_reason ?? "error"}`);
+      }
+      if (event.args_validation_status === "invalid") {
+        inc(invalidArgs, `${key}:${(event.args_validation_errors ?? ["invalid_args"]).join("|")}`);
+      }
     } else if (event.event_type === "tool_executed" && event.tool_name) {
       inc(tools, event.tool_name);
       inc(globalTools, event.tool_name);
@@ -222,6 +234,12 @@ for (const file of auditFiles(target)) {
   const expectation = evaluateSkillExpectations(events, taskText, expectOverride);
   const readSkillCount = reads.size;
   const availableSkillCount = available.size;
+  const executedWithoutReading = [...firstScriptIndex.keys()]
+    .filter((skill) => !firstReadIndex.has(skill))
+    .sort();
+  const executedBeforeReading = [...firstScriptIndex.keys()]
+    .filter((skill) => firstReadIndex.has(skill) && firstScriptIndex.get(skill) < firstReadIndex.get(skill))
+    .sort();
   sessions.push({
     sessionId,
     file,
@@ -233,6 +251,10 @@ for (const file of auditFiles(target)) {
     promptPreviews,
     skillReads: top(reads),
     skillScripts: top(scripts),
+    scriptFailures: top(scriptFailures),
+    invalidArgs: top(invalidArgs),
+    executedWithoutReading,
+    executedBeforeReading,
     tools: top(tools),
     expectation,
   });
@@ -284,6 +306,12 @@ if (asJson) {
       const e = session.expectation;
       console.log(`    taskTypes=${e.matchedTaskTypes.join(",") || "manual"} expected=${e.expectedSkills.join(",") || "none"} related=${e.relatedSkills.slice(0, 6).join(",") || "none"}`);
       console.log(`    read=${e.readSkills.join(",") || "none"} usedExpected=${e.usedExpectedSkills.join(",") || "none"} missingExpected=${e.missingExpectedSkills.join(",") || "none"} readBeforeFirstTool=${e.readBeforeFirstTool}`);
+    }
+    if (session.executedWithoutReading.length > 0 || session.executedBeforeReading.length > 0) {
+      console.log(`    executeWithoutRead=${session.executedWithoutReading.join(",") || "none"} executeBeforeRead=${session.executedBeforeReading.join(",") || "none"}`);
+    }
+    if (session.invalidArgs.length > 0) {
+      console.log(`    invalidArgs=${session.invalidArgs.map((i) => `${i.name}(${i.count})`).join(", ")}`);
     }
   }
 }

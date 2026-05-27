@@ -28,6 +28,7 @@ import type {
   DelegationToolUpdatePayload,
   DelegationUpdateMessagePayload,
 } from "../shared/delegation-persistence.js";
+import type { SkillAuditEvent } from "../shared/skill-audit-ledger.js";
 
 /** Read + JSON-parse an HTTP request body. */
 async function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
@@ -124,6 +125,22 @@ async function validateDelegationEventActor(
     default:
       return null;
   }
+}
+
+async function validateSkillAuditEventActor(
+  event: SkillAuditEvent,
+  identity: CertificateIdentity,
+): Promise<{ status: number; error: string } | null> {
+  if (!event.event_id || !event.session_id || !event.event_type) {
+    return { status: 400, error: "invalid skill audit event" };
+  }
+  if (event.agent_id && event.agent_id !== identity.agentId) {
+    return { status: 403, error: "skill audit agent mismatch" };
+  }
+  if (!(await sessionBelongsToIdentity(event.session_id, identity))) {
+    return { status: 403, error: "skill audit session mismatch" };
+  }
+  return null;
 }
 
 /**
@@ -266,6 +283,36 @@ export async function handleKnowledgeBundle(
     sendJson(res, 200, data);
   } catch (err) {
     console.error("[internal-api] knowledge/bundle error:", err);
+    sendJson(res, 500, { error: "Internal server error" });
+  }
+}
+
+export async function handleSkillAuditEvents(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  identity: CertificateIdentity,
+  frontendClient: FrontendWsClient,
+): Promise<void> {
+  try {
+    const body = await readJsonBody(req) as { event?: SkillAuditEvent };
+    if (!body.event) {
+      sendJson(res, 400, { error: "missing event" });
+      return;
+    }
+    const validation = await validateSkillAuditEventActor(body.event, identity);
+    if (validation) {
+      sendJson(res, validation.status, { error: validation.error });
+      return;
+    }
+    await frontendClient.request("skillAudit.appendEvent", {
+      event: {
+        ...body.event,
+        agent_id: body.event.agent_id ?? identity.agentId,
+      },
+    });
+    sendJson(res, 200, { ok: true });
+  } catch (err) {
+    console.error("[internal-api] skill-audit event error:", err);
     sendJson(res, 500, { error: "Internal server error" });
   }
 }

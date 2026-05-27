@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import * as fs from "node:fs";
+import { createHash } from "node:crypto";
 import { loadConfig } from "../../core/config.js";
 
 function skillsBase(): string {
@@ -158,6 +159,44 @@ export interface ResolvedScript {
   content: string;
   interpreter: "bash" | "python3";
   scope: SkillScope;
+  skillFilePath?: string;
+  skillFileHash?: string;
+  scriptHash: string;
+}
+
+export interface ScriptArgSpec {
+  name: string;
+  aliases?: string[];
+  required?: boolean;
+  takesValue?: boolean;
+  repeatable?: boolean;
+  allowedValues?: string[];
+}
+
+export interface ScriptArgManifestEntry {
+  args?: ScriptArgSpec[];
+  allowExtraArgs?: boolean;
+}
+
+export interface ScriptArgValidationResult {
+  schemaStatus: "present" | "missing" | "unknown";
+  status: "valid" | "invalid" | "unknown";
+  errors: string[];
+  parsedArgs: {
+    flags: Record<string, string[]>;
+    positionals: string[];
+  };
+}
+
+function sha256(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
+}
+
+function skillFileForScriptsDir(scriptsDir: string): { skillFilePath?: string; skillFileHash?: string } {
+  const skillFile = path.join(path.dirname(scriptsDir), "SKILL.md");
+  if (!fs.existsSync(skillFile)) return {};
+  const content = fs.readFileSync(skillFile, "utf-8");
+  return { skillFilePath: skillFile, skillFileHash: sha256(content) };
 }
 
 /**
@@ -171,15 +210,127 @@ export function resolveSkillScript(
   for (const { dir, scope } of getSkillScriptDirs(skill)) {
     const scriptPath = path.join(dir, script);
     if (fs.existsSync(scriptPath)) {
+      const content = fs.readFileSync(scriptPath, "utf-8");
       return {
         path: scriptPath,
-        content: fs.readFileSync(scriptPath, "utf-8"),
+        content,
         interpreter: script.endsWith(".py") ? "python3" : "bash",
         scope,
+        ...skillFileForScriptsDir(dir),
+        scriptHash: sha256(content),
       };
     }
   }
   return null;
+}
+
+function readScriptManifest(skill: string): Record<string, ScriptArgManifestEntry> | null {
+  for (const { dir } of getSkillScriptDirs(skill)) {
+    const skillDir = path.dirname(dir);
+    for (const name of ["script-manifest.json", "scripts.json"]) {
+      const filePath = path.join(skillDir, name);
+      if (!fs.existsSync(filePath)) continue;
+      try {
+        const parsed = JSON.parse(fs.readFileSync(filePath, "utf-8")) as any;
+        if (parsed?.scripts && typeof parsed.scripts === "object") {
+          return parsed.scripts as Record<string, ScriptArgManifestEntry>;
+        }
+        return parsed as Record<string, ScriptArgManifestEntry>;
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+function canonicalFlag(spec: ScriptArgSpec): string {
+  return spec.name;
+}
+
+export function validateScriptArgs(skill: string, script: string, argv: string[]): ScriptArgValidationResult {
+  const manifest = readScriptManifest(skill);
+  const parsedArgs = { flags: {} as Record<string, string[]>, positionals: [] as string[] };
+  if (!manifest) {
+    for (const token of argv) {
+      if (token.startsWith("-")) parsedArgs.flags[token.split("=")[0]!] = [];
+      else parsedArgs.positionals.push(token);
+    }
+    return { schemaStatus: "missing", status: "unknown", errors: [], parsedArgs };
+  }
+
+  const entry = manifest[script];
+  if (!entry) {
+    return { schemaStatus: "missing", status: "unknown", errors: [], parsedArgs };
+  }
+
+  const specs = entry.args ?? [];
+  const byName = new Map<string, ScriptArgSpec>();
+  for (const spec of specs) {
+    byName.set(spec.name, spec);
+    for (const alias of spec.aliases ?? []) byName.set(alias, spec);
+  }
+
+  const errors: string[] = [];
+  const seen = new Map<string, number>();
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i]!;
+    if (!token.startsWith("-") || token === "-") {
+      parsedArgs.positionals.push(token);
+      continue;
+    }
+
+    const eq = token.indexOf("=");
+    const rawFlag = eq >= 0 ? token.slice(0, eq) : token;
+    const inlineValue = eq >= 0 ? token.slice(eq + 1) : undefined;
+    const spec = byName.get(rawFlag);
+    if (!spec) {
+      errors.push(`unknown_flag:${rawFlag}`);
+      if (inlineValue !== undefined) parsedArgs.flags[rawFlag] = [inlineValue];
+      else parsedArgs.flags[rawFlag] = [];
+      continue;
+    }
+
+    const flag = canonicalFlag(spec);
+    seen.set(flag, (seen.get(flag) ?? 0) + 1);
+    if (!spec.repeatable && (seen.get(flag) ?? 0) > 1) errors.push(`duplicate_flag:${flag}`);
+
+    let value = inlineValue;
+    if (spec.takesValue) {
+      if (value === undefined) {
+        const next = argv[i + 1];
+        if (next && !next.startsWith("-")) {
+          value = next;
+          i++;
+        } else {
+          errors.push(`missing_value:${flag}`);
+        }
+      }
+      if (value !== undefined && spec.allowedValues && !spec.allowedValues.includes(value)) {
+        errors.push(`invalid_value:${flag}`);
+      }
+      parsedArgs.flags[flag] = [...(parsedArgs.flags[flag] ?? []), value ?? ""];
+    } else {
+      if (inlineValue !== undefined) errors.push(`unexpected_value:${flag}`);
+      parsedArgs.flags[flag] = [...(parsedArgs.flags[flag] ?? []), "true"];
+    }
+  }
+
+  for (const spec of specs) {
+    if (spec.required && !seen.has(canonicalFlag(spec))) {
+      errors.push(`missing_required:${canonicalFlag(spec)}`);
+    }
+  }
+  if (entry.allowExtraArgs === false && parsedArgs.positionals.length > 0) {
+    errors.push("unexpected_positional_args");
+  }
+
+  return {
+    schemaStatus: "present",
+    status: errors.length > 0 ? "invalid" : "valid",
+    errors,
+    parsedArgs,
+  };
 }
 
 /**

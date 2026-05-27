@@ -8,6 +8,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { createHash, randomUUID } from "node:crypto";
 import { onDiagnostic, type DiagnosticEvent, type SkillAuditScope } from "./diagnostic-events.js";
 import { buildRedactionConfig, redactText } from "./output-redactor.js";
 
@@ -21,6 +22,7 @@ export type SkillAuditEventType =
 
 export interface SkillAuditEvent {
   version: 1;
+  event_id: string;
   event_type: SkillAuditEventType;
   recorded_at: string;
   session_id: string;
@@ -31,14 +33,25 @@ export interface SkillAuditEvent {
   skill_name?: string;
   skill_scope?: SkillAuditScope | "builtin" | "global";
   skill_file_path?: string;
+  skill_file_hash?: string;
   prompt_preview?: string;
   prompt_chars?: number;
   script_name?: string;
+  script_path?: string;
+  script_hash?: string;
   tool_name?: string;
+  tool_call_id?: string;
   mcp_server?: string;
   mcp_tool?: string;
   outcome?: "success" | "error" | "completed";
+  failure_reason?: string;
   duration_ms?: number;
+  args_preview?: string;
+  args_hash?: string;
+  args_schema_status?: "present" | "missing" | "unknown";
+  args_validation_status?: "valid" | "invalid" | "unknown";
+  args_validation_errors?: string[];
+  parsed_args_json?: string;
   input_tokens?: number;
   output_tokens?: number;
   total_tokens?: number;
@@ -51,6 +64,9 @@ export interface SkillAuditSkillSummary {
   read: number;
   script_executed: number;
   script_errors: number;
+  arg_validation_errors: number;
+  executed_without_reading: boolean;
+  read_before_first_script: boolean | null;
   avg_script_duration_ms: number;
 }
 
@@ -72,13 +88,25 @@ export interface SkillAuditSummary {
   cost_usd: number;
 }
 
+export type SkillAuditEventForwarder = (event: SkillAuditEvent) => void | Promise<void>;
+
 const PROMPT_PREVIEW_CHARS = 500;
+const ARG_PREVIEW_CHARS = 500;
 
 function promptPreview(text: string): string {
   const redacted = redactText(text, buildRedactionConfig());
   return redacted.length > PROMPT_PREVIEW_CHARS
     ? `${redacted.slice(0, PROMPT_PREVIEW_CHARS)}...`
     : redacted;
+}
+
+export function hashText(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
+}
+
+export function redactedPreview(text: string, maxChars = ARG_PREVIEW_CHARS): string {
+  const redacted = redactText(text, buildRedactionConfig());
+  return redacted.length > maxChars ? `${redacted.slice(0, maxChars)}...` : redacted;
 }
 
 function auditDir(): string {
@@ -128,7 +156,10 @@ export function summarizeSkillAuditEvents(events: SkillAuditEvent[]): SkillAudit
     read: number;
     script_executed: number;
     script_errors: number;
+    arg_validation_errors: number;
     total_script_duration_ms: number;
+    first_read_index: number | null;
+    first_script_index: number | null;
   }>();
   const toolMap = new Map<string, { executed: number; errors: number; total_duration_ms: number }>();
   let promptCount = 0;
@@ -139,19 +170,34 @@ export function summarizeSkillAuditEvents(events: SkillAuditEvent[]): SkillAudit
   function skillEntry(name: string) {
     let entry = skillMap.get(name);
     if (!entry) {
-      entry = { available: 0, read: 0, script_executed: 0, script_errors: 0, total_script_duration_ms: 0 };
+      entry = {
+        available: 0,
+        read: 0,
+        script_executed: 0,
+        script_errors: 0,
+        arg_validation_errors: 0,
+        total_script_duration_ms: 0,
+        first_read_index: null,
+        first_script_index: null,
+      };
       skillMap.set(name, entry);
     }
     return entry;
   }
 
-  for (const event of events) {
+  for (const [index, event] of events.entries()) {
     if (event.skill_name && event.event_type === "skill_available") skillEntry(event.skill_name).available++;
-    if (event.skill_name && event.event_type === "skill_read") skillEntry(event.skill_name).read++;
+    if (event.skill_name && event.event_type === "skill_read") {
+      const entry = skillEntry(event.skill_name);
+      entry.read++;
+      if (entry.first_read_index === null) entry.first_read_index = index;
+    }
     if (event.skill_name && event.event_type === "skill_script_executed") {
       const entry = skillEntry(event.skill_name);
       entry.script_executed++;
+      if (entry.first_script_index === null) entry.first_script_index = index;
       if (event.outcome === "error") entry.script_errors++;
+      if (event.args_validation_status === "invalid") entry.arg_validation_errors++;
       entry.total_script_duration_ms += event.duration_ms ?? 0;
     }
     if (event.tool_name && event.event_type === "tool_executed") {
@@ -180,6 +226,11 @@ export function summarizeSkillAuditEvents(events: SkillAuditEvent[]): SkillAudit
     read: entry.read,
     script_executed: entry.script_executed,
     script_errors: entry.script_errors,
+    arg_validation_errors: entry.arg_validation_errors,
+    executed_without_reading: entry.script_executed > 0 && entry.read === 0,
+    read_before_first_script: entry.first_script_index === null
+      ? null
+      : entry.first_read_index !== null && entry.first_read_index < entry.first_script_index,
     avg_script_duration_ms: entry.script_executed > 0
       ? Math.round(entry.total_script_duration_ms / entry.script_executed)
       : 0,
@@ -225,12 +276,16 @@ export function detectSkillReadTarget(filePath: string): { skillName: string; sc
 
 function eventFromDiagnostic(event: DiagnosticEvent): SkillAuditEvent | null {
   const recordedAt = new Date().toISOString();
+  const base = {
+    version: 1 as const,
+    event_id: randomUUID(),
+    recorded_at: recordedAt,
+  };
   switch (event.type) {
     case "prompt_started":
       return {
-        version: 1,
+        ...base,
         event_type: "prompt_started",
-        recorded_at: recordedAt,
         session_id: event.sessionId,
         user_id: event.userId,
         agent_id: event.agentId,
@@ -239,49 +294,60 @@ function eventFromDiagnostic(event: DiagnosticEvent): SkillAuditEvent | null {
       };
     case "skill_available":
       return {
-        version: 1,
+        ...base,
         event_type: "skill_available",
-        recorded_at: recordedAt,
         session_id: event.sessionId,
         user_id: event.userId,
         agent_id: event.agentId,
         skill_name: event.skillName,
         skill_scope: event.scope,
         skill_file_path: event.filePath,
+        skill_file_hash: event.fileHash,
       };
     case "skill_read":
       return {
-        version: 1,
+        ...base,
         event_type: "skill_read",
-        recorded_at: recordedAt,
         session_id: event.sessionId,
         user_id: event.userId,
         agent_id: event.agentId,
         skill_name: event.skillName,
         skill_scope: event.scope,
         skill_file_path: event.filePath,
+        skill_file_hash: event.fileHash,
       };
     case "skill_call":
       if (!event.sessionId) return null;
       return {
-        version: 1,
+        ...base,
         event_type: "skill_script_executed",
-        recorded_at: recordedAt,
         session_id: event.sessionId,
         user_id: event.userId,
         agent_id: event.agentId,
         skill_name: event.skillName,
         skill_scope: event.scope,
+        skill_file_path: event.skillFilePath,
+        skill_file_hash: event.skillFileHash,
         script_name: event.scriptName,
+        script_path: event.scriptPath,
+        script_hash: event.scriptHash,
+        tool_name: event.toolName,
+        tool_call_id: event.toolCallId,
         outcome: event.outcome,
+        failure_reason: event.failureReason,
         duration_ms: event.durationMs,
+        args_preview: event.argValidation?.argsPreview,
+        args_hash: event.argValidation?.argsHash,
+        args_schema_status: event.argValidation?.schemaStatus,
+        args_validation_status: event.argValidation?.status,
+        args_validation_errors: event.argValidation?.errors,
+        parsed_args_json: event.argValidation?.parsedArgsJson,
       };
     case "tool_call":
       if (!event.sessionId) return null;
       return {
-        version: 1,
+        ...base,
         event_type: "tool_executed",
-        recorded_at: recordedAt,
         session_id: event.sessionId,
         user_id: event.userId,
         agent_id: event.agentId,
@@ -296,9 +362,8 @@ function eventFromDiagnostic(event: DiagnosticEvent): SkillAuditEvent | null {
       const total = Math.max(0, event.curr.tokens.total - event.prev.tokens.total);
       const cost = Math.max(0, event.curr.cost - event.prev.cost);
       return {
-        version: 1,
+        ...base,
         event_type: "prompt_complete",
-        recorded_at: recordedAt,
         session_id: event.sessionId,
         user_id: event.userId,
         model_id: event.model?.id,
@@ -317,6 +382,11 @@ function eventFromDiagnostic(event: DiagnosticEvent): SkillAuditEvent | null {
 }
 
 let unsubscribe: (() => void) | null = null;
+let forwarder: SkillAuditEventForwarder | null = null;
+
+export function setSkillAuditEventForwarder(next: SkillAuditEventForwarder | null): void {
+  forwarder = next;
+}
 
 export function startSkillAuditLedger(): void {
   if (unsubscribe) return;
@@ -324,6 +394,11 @@ export function startSkillAuditLedger(): void {
     const auditEvent = eventFromDiagnostic(event);
     if (!auditEvent) return;
     appendSkillAuditEvent(auditEvent);
+    if (forwarder) {
+      Promise.resolve(forwarder(auditEvent)).catch((err) => {
+        console.warn("[skill-audit] failed to forward event:", err);
+      });
+    }
   });
 }
 

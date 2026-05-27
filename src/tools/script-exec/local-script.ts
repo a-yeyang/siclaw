@@ -17,6 +17,7 @@ import {
   listAllSkillsWithScripts,
 } from "../infra/script-resolver.js";
 import { emitDiagnostic } from "../../shared/diagnostic-events.js";
+import { buildScriptArgAudit, skillCallAuditMetadata } from "../infra/script-audit.js";
 
 interface RunSkillParams {
   skill: string;
@@ -87,7 +88,7 @@ Read the skill's SKILL.md first to understand required parameters and usage.`,
         })
       ),
     }),
-    async execute(_toolCallId, rawParams, signal) {
+    async execute(toolCallId, rawParams, signal) {
       const params = rawParams as RunSkillParams;
       const skill = params.skill?.trim();
       const script = params.script?.trim();
@@ -101,6 +102,20 @@ Read the skill's SKILL.md first to understand required parameters and usage.`,
 
       // Validate no path traversal
       if (skill.includes("/") || skill.includes("\\") || script.includes("/") || script.includes("\\")) {
+        emitDiagnostic({
+          type: "skill_call",
+          skillName: skill,
+          scriptName: script,
+          scope: "unknown",
+          outcome: "error",
+          durationMs: 0,
+          sessionId: sessionIdRef?.current,
+          userId: userId ?? "unknown",
+          agentId: agentId ?? null,
+          toolName: "local_script",
+          toolCallId,
+          failureReason: "invalid_script_name",
+        });
         return {
           content: [{ type: "text", text: "Error: skill and script names must not contain path separators." }],
           details: { error: true },
@@ -109,6 +124,21 @@ Read the skill's SKILL.md first to understand required parameters and usage.`,
 
       const resolved = resolveSkillScript(skill, script);
       if (!resolved) {
+        emitDiagnostic({
+          type: "skill_call",
+          skillName: skill,
+          scriptName: script,
+          scope: "unknown",
+          outcome: "error",
+          durationMs: 0,
+          sessionId: sessionIdRef?.current,
+          userId: userId ?? "unknown",
+          agentId: agentId ?? null,
+          toolName: "local_script",
+          toolCallId,
+          failureReason: "script_not_found",
+          argValidation: buildScriptArgAudit(skill, script, params.args),
+        });
         const available = listSkillScripts(skill);
         let hint: string;
         if (available.length > 0) {
@@ -146,6 +176,7 @@ Read the skill's SKILL.md first to understand required parameters and usage.`,
       }
 
       const args = params.args?.trim() || "";
+      const argValidation = buildScriptArgAudit(skill, script, args);
       // Security: parse args into array and pass via spawn() — never interpolate
       // into a shell command string (prevents shell injection via args parameter)
       const cmdArgs = args ? parseArgs(args) : [];
@@ -211,6 +242,10 @@ Read the skill's SKILL.md first to understand required parameters and usage.`,
           sessionId: sessionIdRef?.current,
           userId: userId ?? "unknown",
           agentId: agentId ?? null,
+          toolName: "local_script",
+          toolCallId,
+          ...skillCallAuditMetadata(resolved),
+          argValidation,
         });
         return {
           content: [{ type: "text", text: postExecSecurity(stdout.trim(), null, { stderr: stderr.trim() || undefined }) }],
@@ -228,6 +263,11 @@ Read the skill's SKILL.md first to understand required parameters and usage.`,
           sessionId: sessionIdRef?.current,
           userId: userId ?? "unknown",
           agentId: agentId ?? null,
+          toolName: "local_script",
+          toolCallId,
+          failureReason: argValidation.status === "invalid" ? "invalid_args" : "script_exit_error",
+          ...skillCallAuditMetadata(resolved),
+          argValidation,
         });
         return {
           content: [{ type: "text", text: postExecSecurity(`Exit code: ${err.code ?? "unknown"}\n${err.stdout?.trim() ?? ""}`, null, { stderr: errStderr || undefined }) }],
