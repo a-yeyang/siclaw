@@ -9,7 +9,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import { onDiagnostic, type DiagnosticEvent, type SkillAuditScope } from "./diagnostic-events.js";
+import {
+  onDiagnostic,
+  type DiagnosticEvent,
+  type SkillAuditAction,
+  type SkillAuditKind,
+  type SkillAuditScope,
+} from "./diagnostic-events.js";
 import { buildRedactionConfig, redactText } from "./output-redactor.js";
 
 export type SkillAuditEventType =
@@ -24,6 +30,9 @@ export interface SkillAuditEvent {
   version: 1;
   event_id: string;
   event_type: SkillAuditEventType;
+  skill_action?: SkillAuditAction;
+  skill_kind?: SkillAuditKind;
+  skill_script_count?: number;
   recorded_at: string;
   session_id: string;
   user_id?: string;
@@ -274,6 +283,23 @@ export function detectSkillReadTarget(filePath: string): { skillName: string; sc
   return { skillName, scope: "unknown" };
 }
 
+function countSiblingSkillScripts(skillFilePath?: string): number | undefined {
+  if (!skillFilePath) return undefined;
+  const scriptsDir = path.join(path.dirname(path.resolve(skillFilePath)), "scripts");
+  try {
+    return fs.readdirSync(scriptsDir)
+      .filter((name) => name.endsWith(".sh") || name.endsWith(".py"))
+      .length;
+  } catch {
+    return 0;
+  }
+}
+
+function skillKindFromScriptCount(scriptCount?: number): SkillAuditKind {
+  if (scriptCount === undefined) return "unknown";
+  return scriptCount > 0 ? "scripted" : "markdown";
+}
+
 function eventFromDiagnostic(event: DiagnosticEvent): SkillAuditEvent | null {
   const recordedAt = new Date().toISOString();
   const base = {
@@ -293,34 +319,49 @@ function eventFromDiagnostic(event: DiagnosticEvent): SkillAuditEvent | null {
         prompt_chars: event.promptChars,
       };
     case "skill_available":
-      return {
-        ...base,
-        event_type: "skill_available",
-        session_id: event.sessionId,
-        user_id: event.userId,
-        agent_id: event.agentId,
-        skill_name: event.skillName,
-        skill_scope: event.scope,
-        skill_file_path: event.filePath,
-        skill_file_hash: event.fileHash,
-      };
+      {
+        const scriptCount = event.scriptCount ?? countSiblingSkillScripts(event.filePath);
+        return {
+          ...base,
+          event_type: "skill_available",
+          skill_action: "available",
+          skill_kind: event.skillKind ?? skillKindFromScriptCount(scriptCount),
+          skill_script_count: scriptCount,
+          session_id: event.sessionId,
+          user_id: event.userId,
+          agent_id: event.agentId,
+          skill_name: event.skillName,
+          skill_scope: event.scope,
+          skill_file_path: event.filePath,
+          skill_file_hash: event.fileHash,
+        };
+      }
     case "skill_read":
-      return {
-        ...base,
-        event_type: "skill_read",
-        session_id: event.sessionId,
-        user_id: event.userId,
-        agent_id: event.agentId,
-        skill_name: event.skillName,
-        skill_scope: event.scope,
-        skill_file_path: event.filePath,
-        skill_file_hash: event.fileHash,
-      };
+      {
+        const scriptCount = event.scriptCount ?? countSiblingSkillScripts(event.filePath);
+        return {
+          ...base,
+          event_type: "skill_read",
+          skill_action: "read",
+          skill_kind: event.skillKind ?? skillKindFromScriptCount(scriptCount),
+          skill_script_count: scriptCount,
+          session_id: event.sessionId,
+          user_id: event.userId,
+          agent_id: event.agentId,
+          skill_name: event.skillName,
+          skill_scope: event.scope,
+          skill_file_path: event.filePath,
+          skill_file_hash: event.fileHash,
+        };
+      }
     case "skill_call":
       if (!event.sessionId) return null;
       return {
         ...base,
         event_type: "skill_script_executed",
+        skill_action: "execute",
+        skill_kind: event.skillKind ?? "scripted",
+        skill_script_count: event.scriptCount,
         session_id: event.sessionId,
         user_id: event.userId,
         agent_id: event.agentId,

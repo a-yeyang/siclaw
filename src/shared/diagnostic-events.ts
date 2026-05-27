@@ -13,6 +13,8 @@
 import type { BrainSessionStats, BrainModelInfo } from "../core/brain-session.js";
 
 export type SkillAuditScope = "builtin" | "global" | "platform" | "unknown";
+export type SkillAuditAction = "available" | "read" | "execute";
+export type SkillAuditKind = "markdown" | "scripted" | "unknown";
 export type SkillAuditArgSchemaStatus = "present" | "missing" | "unknown";
 export type SkillAuditArgValidationStatus = "valid" | "invalid" | "unknown";
 
@@ -77,6 +79,8 @@ export type DiagnosticEvent =
       skillName: string;
       scriptName: string;
       scope: SkillAuditScope;
+      skillKind?: SkillAuditKind;
+      scriptCount?: number;
       outcome: "success" | "error";
       durationMs: number;
       sessionId?: string;
@@ -97,6 +101,8 @@ export type DiagnosticEvent =
       sessionId: string;
       skillName: string;
       scope: SkillAuditScope;
+      skillKind?: SkillAuditKind;
+      scriptCount?: number;
       filePath?: string;
       fileHash?: string;
       userId: string;
@@ -107,6 +113,8 @@ export type DiagnosticEvent =
       sessionId: string;
       skillName: string;
       scope: SkillAuditScope;
+      skillKind?: SkillAuditKind;
+      scriptCount?: number;
       filePath?: string;
       fileHash?: string;
       userId: string;

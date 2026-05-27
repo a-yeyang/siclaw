@@ -1531,6 +1531,8 @@ Always end with a final report even if evidence is incomplete.`;
         sessionId: id,
         skillName: skill.name,
         scope: skill.scope,
+        skillKind: skill.skillKind,
+        scriptCount: skill.scriptCount,
         filePath: skill.filePath,
         fileHash: skill.fileHash,
         userId: this.userId ?? "unknown",

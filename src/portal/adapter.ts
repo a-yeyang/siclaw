@@ -1974,7 +1974,8 @@ export function buildAdapterRpcHandlers(): Map<string, (params: any, agentId: st
     const db = getDb();
     const event = params.event ?? {};
     const columns = [
-      "id", "session_id", "user_id", "agent_id", "event_type", "recorded_at",
+      "id", "session_id", "user_id", "agent_id", "event_type",
+      "skill_action", "skill_kind", "skill_script_count", "recorded_at",
       "skill_name", "skill_scope", "skill_file_path", "skill_file_hash",
       "script_name", "script_path", "script_hash", "tool_name", "tool_call_id",
       "mcp_server", "mcp_tool", "outcome", "failure_reason", "duration_ms",
@@ -1989,6 +1990,9 @@ export function buildAdapterRpcHandlers(): Map<string, (params: any, agentId: st
       event.user_id ?? null,
       event.agent_id ?? null,
       event.event_type,
+      event.skill_action ?? null,
+      event.skill_kind ?? null,
+      event.skill_script_count ?? null,
       toSqlTimestamp(event.recorded_at ?? new Date()),
       event.skill_name ?? null,
       event.skill_scope ?? null,

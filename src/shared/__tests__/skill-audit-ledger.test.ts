@@ -46,6 +46,8 @@ describe("SkillAuditLedger", () => {
       sessionId: "session/1",
       skillName: "gpu-health",
       scope: "builtin",
+      skillKind: "scripted",
+      scriptCount: 2,
       filePath: "/repo/skills/core/gpu-health/SKILL.md",
       userId: "u1",
       agentId: "a1",
@@ -55,6 +57,8 @@ describe("SkillAuditLedger", () => {
       sessionId: "session/1",
       skillName: "gpu-health",
       scope: "builtin",
+      skillKind: "scripted",
+      scriptCount: 2,
       filePath: "/repo/skills/core/gpu-health/SKILL.md",
       userId: "u1",
       agentId: "a1",
@@ -105,6 +109,18 @@ describe("SkillAuditLedger", () => {
     ]);
     expect(events[3]).toMatchObject({
       event_type: "skill_script_executed",
+      skill_action: "execute",
+      skill_kind: "scripted",
+    });
+    expect(events[1]).toMatchObject({
+      skill_action: "available",
+      skill_kind: "scripted",
+      skill_script_count: 2,
+    });
+    expect(events[2]).toMatchObject({
+      skill_action: "read",
+      skill_kind: "scripted",
+      skill_script_count: 2,
     });
     expect(events[4]).toMatchObject({
       tool_name: "mcp__prometheus__query",

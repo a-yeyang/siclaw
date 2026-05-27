@@ -161,6 +161,7 @@ export interface ResolvedScript {
   scope: SkillScope;
   skillFilePath?: string;
   skillFileHash?: string;
+  siblingScriptCount?: number;
   scriptHash: string;
 }
 
@@ -199,6 +200,16 @@ function skillFileForScriptsDir(scriptsDir: string): { skillFilePath?: string; s
   return { skillFilePath: skillFile, skillFileHash: sha256(content) };
 }
 
+function countScriptsInDir(scriptsDir: string): number {
+  try {
+    return fs.readdirSync(scriptsDir)
+      .filter((name) => name.endsWith(".sh") || name.endsWith(".py"))
+      .length;
+  } catch {
+    return 0;
+  }
+}
+
 /**
  * Resolve a skill script.
  * Searches the single skills directory (bundle model) or scope dirs (CLI fallback).
@@ -217,6 +228,7 @@ export function resolveSkillScript(
         interpreter: script.endsWith(".py") ? "python3" : "bash",
         scope,
         ...skillFileForScriptsDir(dir),
+        siblingScriptCount: countScriptsInDir(dir),
         scriptHash: sha256(content),
       };
     }

@@ -81,6 +81,7 @@ describe("runPortalMigrations on SQLite :memory:", () => {
       "idx_skill_audit_user",
       "idx_skill_audit_agent",
       "idx_skill_audit_skill",
+      "idx_skill_audit_action_kind",
       "idx_skill_audit_outcome",
       "idx_notifications_user",
       "idx_api_keys_hash",

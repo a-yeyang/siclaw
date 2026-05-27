@@ -36,7 +36,7 @@ import type { BrainSession } from "./brain-session.js";
 import { McpClientManager } from "./mcp-client.js";
 import { loadConfig, getEmbeddingConfig, getConfigPath, getDefaultLlm } from "./config.js";
 import { createGuardRegistry, installGuardPipeline } from "./guard-pipeline.js";
-import { emitDiagnostic, type SkillAuditScope } from "../shared/diagnostic-events.js";
+import { emitDiagnostic, type SkillAuditKind, type SkillAuditScope } from "../shared/diagnostic-events.js";
 import { detectSkillReadTarget, hashText } from "../shared/skill-audit-ledger.js";
 
 import type { SessionMode, KubeconfigRef, MemoryRef, DpStateRef, MutableDpStateRef } from "./types.js";
@@ -136,7 +136,14 @@ export interface SiclawSessionResult {
   /** Mutable ref — populated when session ID is assigned (for skill_call events) */
   sessionIdRef: { current: string };
   /** Skills loaded into this session, used by AgentBox to emit session-scoped audit events. */
-  skillAuditEntries: Array<{ name: string; scope: SkillAuditScope; filePath?: string; fileHash?: string }>;
+  skillAuditEntries: Array<{
+    name: string;
+    scope: SkillAuditScope;
+    skillKind: SkillAuditKind;
+    scriptCount: number;
+    filePath?: string;
+    fileHash?: string;
+  }>;
 
 }
 
@@ -177,6 +184,22 @@ function inferSkillAuditScope(filePath?: string): SkillAuditScope {
   if (parent === "platform") return "platform";
   if (parent === "resolved" || parent === "global" || parent === "user" || parent === "skillset") return "global";
   return "unknown";
+}
+
+function countSkillScriptsFromSkillFile(filePath?: string): number {
+  if (!filePath) return 0;
+  const scriptsDir = path.join(path.dirname(path.resolve(filePath)), "scripts");
+  try {
+    return fs.readdirSync(scriptsDir)
+      .filter((name) => name.endsWith(".sh") || name.endsWith(".py"))
+      .length;
+  } catch {
+    return 0;
+  }
+}
+
+function skillKindFromScriptCount(scriptCount: number): SkillAuditKind {
+  return scriptCount > 0 ? "scripted" : "markdown";
 }
 
 /**
@@ -438,11 +461,14 @@ export async function createSiclawSession(
           const text = content.toString();
           const skill = detectSkillReadTarget(p);
           if (skill && sessionIdRef.current) {
+            const scriptCount = countSkillScriptsFromSkillFile(p);
             emitDiagnostic({
               type: "skill_read",
               sessionId: sessionIdRef.current,
               skillName: skill.skillName,
               scope: skill.scope,
+              skillKind: skillKindFromScriptCount(scriptCount),
+              scriptCount,
               filePath: path.resolve(p),
               fileHash: hashText(text),
               userId,
@@ -616,12 +642,17 @@ export async function createSiclawSession(
   if (skillDiagnostics.length > 0) {
     console.log(`[agent-factory] Skill diagnostics: ${JSON.stringify(skillDiagnostics)}`);
   }
-  const skillAuditEntries = loadedSkills.map((skill) => ({
-    name: skill.name,
-    scope: inferSkillAuditScope(skill.filePath),
-    ...(skill.filePath ? { filePath: skill.filePath } : {}),
-    ...(skill.filePath && fs.existsSync(skill.filePath) ? { fileHash: hashText(fs.readFileSync(skill.filePath, "utf-8")) } : {}),
-  }));
+  const skillAuditEntries = loadedSkills.map((skill) => {
+    const scriptCount = countSkillScriptsFromSkillFile(skill.filePath);
+    return {
+      name: skill.name,
+      scope: inferSkillAuditScope(skill.filePath),
+      skillKind: skillKindFromScriptCount(scriptCount),
+      scriptCount,
+      ...(skill.filePath ? { filePath: skill.filePath } : {}),
+      ...(skill.filePath && fs.existsSync(skill.filePath) ? { fileHash: hashText(fs.readFileSync(skill.filePath, "utf-8")) } : {}),
+    };
+  });
 
   const sessionManager =
     opts?.sessionManager ?? SessionManager.create(process.cwd());

@@ -1355,6 +1355,9 @@ describe("skillAudit.appendEvent", () => {
         user_id: "u1",
         agent_id: "a1",
         event_type: "skill_script_executed",
+        skill_action: "execute",
+        skill_kind: "scripted",
+        skill_script_count: 1,
         recorded_at: "2026-05-27T00:00:00.000Z",
         skill_name: "pod-debug",
         script_name: "check.sh",
@@ -1369,6 +1372,8 @@ describe("skillAudit.appendEvent", () => {
     expect(query.mock.calls[0][0]).toContain("skill_audit_events");
     expect(query.mock.calls[0][1]).toContain("e1");
     expect(query.mock.calls[0][1]).toContain("[\"unknown_flag:--nmespace\"]");
+    expect(query.mock.calls[0][1]).toContain("execute");
+    expect(query.mock.calls[0][1]).toContain("scripted");
   });
 });
 

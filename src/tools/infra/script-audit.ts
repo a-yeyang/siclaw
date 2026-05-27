@@ -43,12 +43,17 @@ export function buildScriptArgAudit(skill: string, script: string, args: string 
 export function skillCallAuditMetadata(resolved: ResolvedScript): {
   skillFilePath?: string;
   skillFileHash?: string;
+  skillKind: "scripted";
+  scriptCount: number;
   scriptPath: string;
   scriptHash: string;
 } {
+  const scriptCount = resolved.siblingScriptCount ?? 1;
   return {
     skillFilePath: resolved.skillFilePath,
     skillFileHash: resolved.skillFileHash,
+    skillKind: "scripted",
+    scriptCount,
     scriptPath: resolved.path,
     scriptHash: resolved.scriptHash,
   };

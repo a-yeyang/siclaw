@@ -314,6 +314,9 @@ const PORTAL_SCHEMA_SQLS: string[] = [
     user_id CHAR(36),
     agent_id CHAR(36),
     event_type VARCHAR(40) NOT NULL,
+    skill_action VARCHAR(20),
+    skill_kind VARCHAR(20),
+    skill_script_count INT,
     recorded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     skill_name VARCHAR(255),
     skill_scope VARCHAR(20),
@@ -510,6 +513,7 @@ async function createIndexes(): Promise<void> {
   await ensureIndex(db, "skill_audit_events", "idx_skill_audit_user", "user_id, recorded_at");
   await ensureIndex(db, "skill_audit_events", "idx_skill_audit_agent", "agent_id, recorded_at");
   await ensureIndex(db, "skill_audit_events", "idx_skill_audit_skill", "skill_name, event_type, recorded_at");
+  await ensureIndex(db, "skill_audit_events", "idx_skill_audit_action_kind", "skill_action, skill_kind, recorded_at");
   await ensureIndex(db, "skill_audit_events", "idx_skill_audit_outcome", "outcome, recorded_at");
   // notifications
   await ensureIndex(db, "notifications", "idx_notifications_user", "user_id, read_at, created_at");
@@ -551,6 +555,9 @@ export async function runPortalMigrations(): Promise<void> {
   await safeAlterTable(db, "chat_messages", "parent_session_id", "CHAR(36) DEFAULT NULL");
   await safeAlterTable(db, "chat_messages", "delegation_id", "CHAR(36) DEFAULT NULL");
   await safeAlterTable(db, "chat_messages", "target_agent_id", "CHAR(36) DEFAULT NULL");
+  await safeAlterTable(db, "skill_audit_events", "skill_action", "VARCHAR(20) DEFAULT NULL");
+  await safeAlterTable(db, "skill_audit_events", "skill_kind", "VARCHAR(20) DEFAULT NULL");
+  await safeAlterTable(db, "skill_audit_events", "skill_script_count", "INT DEFAULT NULL");
 
   // Indexes that used to be inlined inside CREATE TABLE (+ overlay/org_name
   // indexes added later). Safe to run now that all referenced columns exist.
@@ -566,6 +573,22 @@ export async function runPortalMigrations(): Promise<void> {
   // Data backfill (safe to run repeatedly).
   await db.query("UPDATE chat_sessions SET origin = 'task' WHERE origin = 'cron'");
   await db.query("UPDATE skills SET is_builtin = 1 WHERE created_by = 'system' AND is_builtin = 0");
+  await db.query(`
+    UPDATE skill_audit_events
+    SET skill_action = CASE event_type
+      WHEN 'skill_available' THEN 'available'
+      WHEN 'skill_read' THEN 'read'
+      WHEN 'skill_script_executed' THEN 'execute'
+      ELSE skill_action
+    END
+    WHERE skill_action IS NULL
+  `);
+  await db.query(`
+    UPDATE skill_audit_events
+    SET skill_kind = 'scripted'
+    WHERE skill_kind IS NULL
+      AND (event_type = 'skill_script_executed' OR script_name IS NOT NULL)
+  `);
 
   console.log("[portal-migrate] All tables ready");
 }
