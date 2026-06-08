@@ -2258,7 +2258,7 @@ function ToolItem({ message, nested }: { message: PilotMessage; nested?: boolean
               const t = message.timing
               const showThink = typeof t?.thinkingMs === "number"
               const showDur = typeof t?.durationMs === "number"
-              const durationLabel = message.toolStatus === "running" ? "running" : "ran"
+              const durationLabel = message.toolStatus === "running" ? "running" : "run"
               return (
                 <>
                   {(showThink || showDur) && (
